@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="logo_violet">#8B6BFF</color>
+    <color name="logo_indigo">#6A4BF5</color>
+    <color name="logo_teal">#35D9A8</color>
+    <color name="logo_green">#2EE59D</color>
+    <color name="logo_ink">#221B47</color>
+</resources>

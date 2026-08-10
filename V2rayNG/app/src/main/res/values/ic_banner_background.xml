@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_banner_background">#FFFFFF</color>
+    <!-- The dark end of the launcher icon's own gradient, so the TV banner and the
+         app icon read as the same mark rather than two different ones. -->
+    <color name="ic_banner_background">#1C1547</color>
 </resources>
