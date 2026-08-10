@@ -10,7 +10,14 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.v2ray.ang"
+        // A separate application id makes this its own app: it installs alongside
+        // v2rayNG rather than colliding with it, and keeps its own data.
+        //
+        // The Kotlin namespace above stays com.v2ray.ang on purpose. The hev tunnel's
+        // JNI methods are registered against that class package (-DPKGNAME in
+        // compile-hevtun), so moving it would mean rebuilding the native libraries to
+        // match, for no gain — the namespace is invisible to users.
+        applicationId = "com.v2rayv.app"
         minSdk = 24
         targetSdk = 37
         versionCode = 743
