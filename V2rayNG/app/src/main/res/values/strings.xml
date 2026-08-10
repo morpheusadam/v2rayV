@@ -320,6 +320,9 @@
     <string name="title_del_invalid_config">Delete invalid configs</string>
     <string name="title_export_all">Export configs to clipboard</string>
     <string name="title_sub_setting">Subscriptions</string>
+    <string name="drawer_servers">Servers</string>
+    <string name="drawer_section_configure">CONFIGURE</string>
+    <string name="drawer_section_app">APP</string>
     <string name="sub_setting_remarks">Remarks</string>
     <string name="sub_setting_url">Optional URL</string>
     <string name="sub_setting_user_agent" translatable="false">User Agent</string>

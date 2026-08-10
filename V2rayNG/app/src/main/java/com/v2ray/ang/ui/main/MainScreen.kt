@@ -1,5 +1,6 @@
 package com.v2ray.ang.ui.main
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,6 +21,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -49,13 +51,19 @@ fun MainScreen(
     onNavigate: (MainDestination) -> Unit,
 ) {
     val uiState by mainViewModel.uiState.collectAsStateWithLifecycle()
-    val rootPagerState = rememberPagerState(initialPage = 0, pageCount = { 2 })
     val rootScope = rememberCoroutineScope()
     val rootDrawerState = rememberDrawerState(DrawerValue.Closed)
 
-    // The drawer wraps the pager rather than living inside a page. A modal drawer nested
-    // in a horizontally scrolling page anchors itself to that page's moving origin, which
-    // leaves the sheet drifting across the screen with the swipe.
+    // The server list used to be the second page of a root pager, so swiping right off the
+    // dashboard landed on a screen inherited wholesale from upstream — a different app's
+    // furniture, reachable by accident. It is now somewhere you go on purpose, from the
+    // dashboard or the drawer, and the dashboard is the whole of the main screen.
+    var showServers by rememberSaveable { mutableStateOf(false) }
+
+    // The drawer wraps the content rather than living inside it. A modal drawer nested in a
+    // horizontally scrolling page anchors itself to that page's moving origin, which left
+    // the sheet drifting across the screen; the pager is gone but the nesting order is
+    // still the one that behaves.
     ModalNavigationDrawer(
         drawerState = rootDrawerState,
         drawerContent = {
@@ -64,40 +72,38 @@ fun MainScreen(
                 onNavigate = { route ->
                     rootScope.launch { rootDrawerState.close() }
                     onNavigate(route)
-                }
+                },
+                onOpenServers = {
+                    rootScope.launch { rootDrawerState.close() }
+                    showServers = true
+                },
             )
         }
     ) {
-        HorizontalPager(
-            state = rootPagerState,
-            modifier = Modifier.fillMaxSize(),
-            beyondViewportPageCount = 1,
-            key = { page -> if (page == 0) "dashboard" else "servers" },
-        ) { page ->
-            if (page == 0) {
-                DashboardScreen(
-                    state = uiState.dashboard,
-                    autoModeRunning = uiState.autoMode.running,
-                    autoModeMessage = uiState.autoMode.message,
-                    autoModeRemaining = formatRemaining(uiState.autoMode.remainingMillis),
-                    autoModeRemainingMillis = uiState.autoMode.remainingMillis,
-                    autoModeStage = uiState.autoMode.stage,
-                    onTogglePower = { onAction(MainAction.ToggleService) },
-                    onNextConnection = { mainViewModel.nextConnection() },
-                    onAutoModeSettings = { onNavigate(MainDestination.AutoMode) },
-                    onOpenServers = { rootScope.launch { rootPagerState.animateScrollToPage(1) } },
-                    onNoticeAction = { mainViewModel.onNoticeAction() },
-                    onNoticeDismiss = { mainViewModel.dismissNotice() },
-                    onOpenMenu = { rootScope.launch { rootDrawerState.open() } },
-                )
-            } else {
-                ServerListScreen(
-                    mainViewModel = mainViewModel,
-                    onAction = onAction,
-                    onNavigate = onNavigate,
-                    onOpenMenu = { rootScope.launch { rootDrawerState.open() } },
-                )
-            }
+        if (showServers) {
+            BackHandler { showServers = false }
+            ServerListScreen(
+                mainViewModel = mainViewModel,
+                onAction = onAction,
+                onNavigate = onNavigate,
+                onOpenMenu = { rootScope.launch { rootDrawerState.open() } },
+            )
+        } else {
+            DashboardScreen(
+                state = uiState.dashboard,
+                autoModeRunning = uiState.autoMode.running,
+                autoModeMessage = uiState.autoMode.message,
+                autoModeRemaining = formatRemaining(uiState.autoMode.remainingMillis),
+                autoModeRemainingMillis = uiState.autoMode.remainingMillis,
+                autoModeStage = uiState.autoMode.stage,
+                onTogglePower = { onAction(MainAction.ToggleService) },
+                onNextConnection = { mainViewModel.nextConnection() },
+                onAutoModeSettings = { onNavigate(MainDestination.AutoMode) },
+                onOpenServers = { showServers = true },
+                onNoticeAction = { mainViewModel.onNoticeAction() },
+                onNoticeDismiss = { mainViewModel.dismissNotice() },
+                onOpenMenu = { rootScope.launch { rootDrawerState.open() } },
+            )
         }
     }
 }

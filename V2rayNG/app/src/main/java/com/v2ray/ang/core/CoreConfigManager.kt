@@ -98,22 +98,19 @@ object CoreConfigManager {
 
         val json = JsonUtil.parseString(raw)?.takeIf { it.isJsonObject }?.asJsonObject ?: return result
 
-        // Inject or remove traffic statistics configuration based on user preference
-        if (MmkvManager.decodeSettingsBool(AppConfig.PREF_SPEED_ENABLED) == true) {
-            if (!json.has("stats")) {
-                json.add("stats", JsonObject())
-            }
-            if (!json.has("policy")) {
-                val policyObj = JsonObject()
-                val systemObj = JsonObject()
-                systemObj.addProperty("statsOutboundUplink", true)
-                systemObj.addProperty("statsOutboundDownlink", true)
-                policyObj.add("system", systemObj)
-                json.add("policy", policyObj)
-            }
-        } else {
-            json.remove("stats")
-            json.remove("policy")
+        // Traffic statistics are always on: the dashboard reads them whenever the tunnel is
+        // up, so gating them on the speed-notification preference — which defaults to off —
+        // is what left DOWNLOAD/UPLOAD reading zero. See ensureTrafficStats.
+        if (!json.has("stats")) {
+            json.add("stats", JsonObject())
+        }
+        if (!json.has("policy")) {
+            val policyObj = JsonObject()
+            val systemObj = JsonObject()
+            systemObj.addProperty("statsOutboundUplink", true)
+            systemObj.addProperty("statsOutboundDownlink", true)
+            policyObj.add("system", systemObj)
+            json.add("policy", policyObj)
         }
 
         if (!needTun()) {
@@ -223,7 +220,7 @@ object CoreConfigManager {
         }
 
         applyObservability(v2rayConfig, balancerStrategies)
-        applySpeedDisabled(v2rayConfig)
+        ensureTrafficStats(v2rayConfig)
         resolveOutboundDomainsToHosts(v2rayConfig)
 
         return v2rayConfig
@@ -704,12 +701,34 @@ object CoreConfigManager {
     }
 
     /**
-     * Remove speed-test runtime sections when the feature is disabled.
+     * Make sure the core is told to count outbound traffic.
+     *
+     * Upstream strips `stats` and `policy` whenever the speed *notification* is switched
+     * off, because that notification was the only thing that ever read the counters. On
+     * this fork the dashboard shows live throughput whenever the tunnel is up, and the
+     * preference defaults to off — so the numbers the dashboard reads were never being
+     * produced, and DOWNLOAD/UPLOAD sat at zero however much traffic went through.
+     *
+     * The preference still decides whether the notification carries a speed line. It no
+     * longer decides whether the core counts, which costs two integers per outbound.
+     *
+     * The bundled templates already carry both sections; this only restores them for a
+     * custom config that arrived without them.
      */
-    private fun applySpeedDisabled(v2rayConfig: V2rayConfig) {
-        if (MmkvManager.decodeSettingsBool(AppConfig.PREF_SPEED_ENABLED) != true) {
-            v2rayConfig.stats = null
-            v2rayConfig.policy = null
+    private fun ensureTrafficStats(v2rayConfig: V2rayConfig) {
+        if (v2rayConfig.stats == null) {
+            v2rayConfig.stats = emptyMap<String, Any>()
+        }
+
+        val statsSystem = mapOf(
+            "statsOutboundUplink" to true,
+            "statsOutboundDownlink" to true,
+        )
+        val policy = v2rayConfig.policy
+        if (policy == null) {
+            v2rayConfig.policy = V2rayConfig.PolicyBean(levels = emptyMap(), system = statsSystem)
+        } else if (policy.system == null) {
+            policy.system = statsSystem
         }
     }
 
