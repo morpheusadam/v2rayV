@@ -71,6 +71,8 @@ object AutoModeSourceManager {
                     if (store.protocolFilter == null) store.protocolFilter = mutableListOf()
                     @Suppress("SENSELESS_COMPARISON")
                     if (store.countryFilter == null) store.countryFilter = mutableListOf()
+                    @Suppress("SENSELESS_COMPARISON")
+                    if (store.speedByGuid == null) store.speedByGuid = mutableMapOf()
                     return store
                 }
             }
@@ -112,6 +114,59 @@ object AutoModeSourceManager {
         store.sources = result
         save()
         return result.size
+    }
+
+    /**
+     * Folds a catalog — a list of subscription links — into the source list.
+     *
+     * The built-in list at [AutoModeNetwork.DEFAULT_SUBS_URL] is a list of *other people's*
+     * subscription links, not a list of servers, which is why it cannot simply be added as
+     * a source: the import stage strips bare subscription URLs out of a fetched body on
+     * purpose, so treating it as one would import exactly nothing.
+     *
+     * Merging rather than replacing, for two reasons. A link the catalog has since dropped
+     * keeps whatever the user's own runs learned about it, and a link the user added by
+     * hand is never quietly removed by an upstream edit. Health travels with the URL, so a
+     * link that reappears in a later catalog resumes with its record intact rather than as
+     * a stranger.
+     *
+     * @return how many links were new.
+     */
+    fun mergeCatalog(urls: List<String>): Int {
+        if (urls.isEmpty()) {
+            return 0
+        }
+        val store = getStore()
+        val known = store.sources.map { it.url }.toHashSet()
+
+        var added = 0
+        for (raw in urls) {
+            val url = normalizeUrl(raw) ?: continue
+            if (known.add(url)) {
+                store.sources.add(AutoModeSource(url = url))
+                added++
+            }
+        }
+
+        if (added > 0) {
+            save()
+        }
+        return added
+    }
+
+    /**
+     * Adds one URL as an ordinary source, for a catalog that turned out to hold servers
+     * rather than links.
+     */
+    fun ensureSource(url: String): Boolean {
+        val store = getStore()
+        val normalized = normalizeUrl(url) ?: return false
+        if (store.sources.any { it.url == normalized }) {
+            return false
+        }
+        store.sources.add(0, AutoModeSource(url = normalized))
+        save()
+        return true
     }
 
     fun setEnabled(url: String, enabled: Boolean) {

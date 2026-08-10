@@ -81,6 +81,50 @@ data class AutoModeStore(
     var countryFilter: MutableList<String> = mutableListOf(),
 
     var sources: MutableList<AutoModeSource> = mutableListOf(),
+
+    /**
+     * The list every run imports from regardless of what the user has added, and the proxy
+     * list used to reach it when the network blocks the host. Blank means the built-in
+     * default; they are stored so a user on a network that blocks even the mirrors can
+     * point the app somewhere else without a new build.
+     */
+    var subsUrl: String = "",
+    var proxiesUrl: String = "",
+
+    /** Last proxy known to reach the subscription host, as "PROTOCOL|host|port". */
+    var lastProxy: String? = null,
+    var lastProxyMillis: Long = 0,
+
+    /**
+     * The user's own line speed in MB/s, measured with the same single-stream method the
+     * servers are measured with so the two numbers can be compared at all.
+     */
+    var baselineMbps: Double = 0.0,
+    var baselineMillis: Long = 0,
+
+    /** Which network the baseline was taken on, so a move from wifi to mobile re-measures. */
+    var baselineNetwork: String = "",
+
+    /**
+     * Fraction of the baseline at which a server is good enough to stop looking and
+     * connect. The rest of the run keeps going to refill the reserve.
+     */
+    var acceptFraction: Double = 0.70,
+
+    /** Servers kept ready so that every connection after the first is immediate. */
+    var reserveCount: Int = 10,
+
+    /**
+     * Measured throughput per kept server, in MB/s, keyed by guid.
+     *
+     * The dashboard shows the speed of whichever server is selected, so this cannot be a
+     * single "last result" — the user may pick any entry in the list. It is bounded by the
+     * size of the reserve and pruned whenever the reserve is rewritten.
+     */
+    var speedByGuid: MutableMap<String, Double> = mutableMapOf(),
+
+    /** Whether pressing power with nothing ready should run Auto Mode rather than refuse. */
+    var autoRunOnConnect: Boolean = true,
 )
 
 /** Result of one Auto Mode run, for the summary message. */
@@ -93,6 +137,13 @@ data class AutoModeRunResult(
     var realPingOk: Int = 0,
     var speedTested: Int = 0,
     var topCount: Int = 0,
+
+    /** The user's own line speed this run was judged against, in MB/s. Zero if unmeasured. */
+    var baselineMbps: Double = 0.0,
+
+    /** Throughput of the server that cleared the bar and was connected to, in MB/s. */
+    var acceptedMbps: Double = 0.0,
+
     var message: String = "",
 )
 

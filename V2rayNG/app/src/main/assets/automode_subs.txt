@@ -1,0 +1,88 @@
+# Subscription sources for Auto Mode
+#
+# One link per line. Lines starting with # are ignored, so notes like this are fine.
+# Paste this whole file into the Auto Mode settings window, or point "Import file" at it.
+#
+# You do not need to curate this list. Auto Mode samples a few links per run, learns
+# which ones still produce working servers, and quietly stops spending time on the ones
+# that have gone stale. Dead links are kept rather than deleted so they can be retried
+# later, because free sources come back as often as they disappear.
+#
+# 76 links, collected from public sources. None of them are operated by this project.
+
+https://raw.githubusercontent.com/crackbest/V2ray-Config/refs/heads/main/config.txt
+https://raw.githubusercontent.com/myominn062-svg/mk-studio-vpn-service/main/subscription-lite.txt
+https://raw.githubusercontent.com/myominn062-svg/mk-studio-vpn-service/main/MK-Studio-VPN-All-Type.txt
+https://raw.githubusercontent.com/myominn062-svg/mk-studio-vpn-service/main/MK-Studio-VPN.txt
+https://raw.githubusercontent.com/myominn062-svg/mk-studio-vpn-service/main/all_configs.txt
+https://raw.githubusercontent.com/myominn062-svg/mk-studio-vpn-service/main/countries/GB.sub.txt
+https://raw.githubusercontent.com/barry-far/V2ray-config/main/Sub1.txt
+https://raw.githubusercontent.com/barry-far/V2ray-config/main/Sub2.txt
+https://raw.githubusercontent.com/barry-far/V2ray-config/main/Sub3.txt
+https://raw.githubusercontent.com/barry-far/V2ray-config/main/Sub4.txt
+https://raw.githubusercontent.com/barry-far/V2ray-config/main/Sub5.txt
+https://raw.githubusercontent.com/barry-far/V2ray-config/main/Sub6.txt
+https://raw.githubusercontent.com/barry-far/V2ray-config/main/Sub7.txt
+https://raw.githubusercontent.com/barry-far/V2ray-config/main/Sub8.txt
+https://raw.githubusercontent.com/hamedcode/port-based-v2ray-configs/main/sub/vless.txt
+https://raw.githubusercontent.com/hamedcode/port-based-v2ray-configs/main/sub/vmess.txt
+https://raw.githubusercontent.com/hamedcode/port-based-v2ray-configs/main/sub/other.txt
+https://raw.githubusercontent.com/penhandev/AutoAiVPN/main/allConfigs.txt
+https://raw.githubusercontent.com/arahmani6991-cyber/v2ray-configs/main/sub.txt
+https://raw.githubusercontent.com/arahmani6991-cyber/v2ray-configs/main/sub_normal.txt
+https://raw.githubusercontent.com/amirkma/proxykma/refs/heads/main/mix.txt
+https://raw.githubusercontent.com/DukeMehdi/FreeList-V2ray-Configs/main/Configs/All-DukeMehdi-Configs.txt
+https://raw.githubusercontent.com/SoliSpirit/SolVPN/main/Subscribes/sub1.txt
+https://raw.githubusercontent.com/SoliSpirit/SolVPN/main/Subscribes/sub2.txt
+https://raw.githubusercontent.com/SoliSpirit/SolVPN/main/Subscribes/sub3.txt
+https://raw.githubusercontent.com/SoliSpirit/SolVPN/main/Subscribes/sub4.txt
+https://raw.githubusercontent.com/SoliSpirit/SolVPN/main/Subscribes/sub5.txt
+https://raw.githubusercontent.com/SoliSpirit/SolVPN/main/Subscribes/sub6.txt
+https://raw.githubusercontent.com/SoliSpirit/SolVPN/main/Subscribes/sub7.txt
+https://raw.githubusercontent.com/SoliSpirit/SolVPN/main/Subscribes/sub8.txt
+https://raw.githubusercontent.com/SoliSpirit/SolVPN/main/Subscribes/sub9.txt
+https://raw.githubusercontent.com/SoliSpirit/SolVPN/main/Subscribes/sub10.txt
+https://raw.githubusercontent.com/MhdiTaheri/V2rayCollector/main/sub/vless
+https://raw.githubusercontent.com/MhdiTaheri/V2rayCollector/main/sub/mix
+https://raw.githubusercontent.com/MhdiTaheri/V2rayCollector/main/sub/tuic
+https://raw.githubusercontent.com/MatinGhanbari/v2ray-configs/main/subscriptions/v2ray/all_sub.txt
+https://raw.githubusercontent.com/Epodonios/v2ray-configs/refs/heads/main/Sub1.txt
+https://raw.githubusercontent.com/Epodonios/v2ray-configs/refs/heads/main/Sub2.txt
+https://raw.githubusercontent.com/Epodonios/v2ray-configs/refs/heads/main/Sub3.txt
+https://raw.githubusercontent.com/Epodonios/v2ray-configs/refs/heads/main/Sub4.txt
+https://raw.githubusercontent.com/Epodonios/v2ray-configs/refs/heads/main/Sub5.txt
+https://raw.githubusercontent.com/Epodonios/v2ray-configs/refs/heads/main/Sub6.txt
+https://raw.githubusercontent.com/Epodonios/v2ray-configs/refs/heads/main/Sub7.txt
+https://raw.githubusercontent.com/Epodonios/v2ray-configs/refs/heads/main/Sub8.txt
+https://raw.githubusercontent.com/Epodonios/v2ray-configs/refs/heads/main/Sub9.txt
+https://raw.githubusercontent.com/Epodonios/v2ray-configs/refs/heads/main/Sub10.txt
+https://raw.githubusercontent.com/Epodonios/v2ray-configs/refs/heads/main/Sub11.txt
+https://raw.githubusercontent.com/Epodonios/v2ray-configs/refs/heads/main/Sub12.txt
+https://raw.githubusercontent.com/Epodonios/v2ray-configs/refs/heads/main/Sub13.txt
+https://raw.githubusercontent.com/Epodonios/v2ray-configs/refs/heads/main/Sub14.txt
+https://raw.githubusercontent.com/nyeinkokoaung404/V2ray-Configs/main/All_Configs_base64_Sub.txt
+https://raw.githubusercontent.com/ALIILAPRO/v2rayNG-Config/main/sub.txt
+https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/all/configs.txt
+https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/all/configs_base64.txt
+https://raw.githubusercontent.com/amir-reza-bijandi/v2ray-configs/main/configs.txt
+https://raw.githubusercontent.com/amir-reza-bijandi/v2ray-configs/main/configs.yaml
+https://raw.githubusercontent.com/MahanKenway/Freedom-V2Ray/main/configs/vless_sub.txt
+https://raw.githubusercontent.com/MahanKenway/Freedom-V2Ray/main/configs/vmess_sub.txt
+https://raw.githubusercontent.com/MahanKenway/Freedom-V2Ray/main/configs/ss_sub.txt
+https://raw.githubusercontent.com/MahanKenway/Freedom-V2Ray/main/configs/trojan_sub.txt
+https://raw.githubusercontent.com/Alirewa/V2ray-Configs/main/config.txt
+https://raw.githubusercontent.com/Alirewa/V2ray-Configs/main/sub1.txt
+https://raw.githubusercontent.com/Alirewa/V2ray-Configs/main/sub2.txt
+https://raw.githubusercontent.com/Alirewa/V2ray-Configs/main/sub3.txt
+https://raw.githubusercontent.com/jafarm83/ConfigV2Ray/main/jafar.txt
+https://raw.githubusercontent.com/iboxz/free-v2ray-collector/main/main/mix.txt
+https://raw.githubusercontent.com/TheCrowCreature/v2rayExtractor/refs/heads/main/mix/sub.html
+https://raw.githubusercontent.com/TheCrowCreature/v2rayExtractor/refs/heads/main/vless.html
+https://raw.githubusercontent.com/TheCrowCreature/v2rayExtractor/refs/heads/main/vmess.html
+https://raw.githubusercontent.com/TheCrowCreature/v2rayExtractor/refs/heads/main/trojan.html
+https://raw.githubusercontent.com/TheCrowCreature/v2rayExtractor/refs/heads/main/ss.html
+https://raw.githubusercontent.com/TheCrowCreature/v2rayExtractor/refs/heads/main/hy2.html
+https://githuhttps://github.com/V2RAYCONFIGSPOOL/V2RAY_SUB/blob/main/v2ray_configs_no9.txt
+https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/V2RAY_SUB/main/v2ray_configs_no3.txt
+https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/V2RAY_SUB/main/v2ray_configs_no7.txt
+https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/V2RAY_SUB/main/v2ray_configs_no5.txt
