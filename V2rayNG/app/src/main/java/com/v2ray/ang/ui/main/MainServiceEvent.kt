@@ -23,6 +23,13 @@ sealed class MainServiceEvent {
 
     /** Live throughput from a measurement in flight. */
     data class AutoModeSpeed(val mbps: Double, val baseline: Boolean) : MainServiceEvent()
+
+    /**
+     * Smart Switch moved off a server that had stopped carrying traffic. Sent from the
+     * core's process, which is where the decision is made; this only exists so the app can
+     * say what happened when it is open to hear it.
+     */
+    data class SmartSwitched(val reason: String) : MainServiceEvent()
     data class TrafficStats(
         val upSpeed: Long,
         val downSpeed: Long,

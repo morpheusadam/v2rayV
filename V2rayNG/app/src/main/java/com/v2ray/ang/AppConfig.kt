@@ -219,6 +219,14 @@ object AppConfig {
 
     const val MSG_TRAFFIC_STATS = 94
 
+    /**
+     * Smart Switch moved the connection off a server that stopped carrying traffic.
+     *
+     * Sent from the core's process, where the decision is made, purely so the app can say
+     * what happened if it is open. The switch does not depend on anyone receiving this.
+     */
+    const val MSG_SMART_SWITCH = 98
+
     /** Notification channel IDs and names. */
     // Use a new ID because Android does not let an app raise an existing channel's importance.
     const val RAY_NG_CHANNEL_ID = "CORE_M_CH_ID_V2"

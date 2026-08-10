@@ -149,25 +149,34 @@ every proxy proved to open a real TLS tunnel to GitHub before it is published.
 ## A run, end to end
 
 ```
-                                   ┌──────────────────┐
-   power press  ─────────────────► │  baseline probe  │  your line, single stream
-                                   └────────┬─────────┘
-                                            │  threshold = line × 0.70
-                                            ▼
-   sources ──► fetch ──► import ──► filter ──► rank ──► tcping ──► speed test
-   (Thompson    (route    (strip     (dedupe,  (protocol  (drop      (one at a
-    sampled)     ladder)   nested     region)   country)   the dead)   time)
-                           subs)                                        │
-                                                                        ▼
-                                          connect on the first server ≥ threshold
-                                                                        │
-                                            keep going in the background │
-                                                                        ▼
-                                     reserve of 10 ──► next press is instant
+   power press ──► fetch ──► import ──► filter ──► rank ──► tcping ──► speed test
+                   (route     (strip     (dedupe,  (protocol  (drop      (one at a
+                    ladder,    nested     region)   country)   the dead)   time)
+                    raced)     subs)                    │                    │
+                                                        │                    ▼
+                              ┌──────────────────┐      │   connect on the first ≥ threshold
+                              │  baseline probe  │ ◄────┘                    │
+                              │ your line, single │  runs under tcping,      │
+                              │ stream, ~6s       │  which moves no bytes    │
+                              └────────┬─────────┘                           │
+                                       │                                     │
+                        threshold = line × 0.70 ──────────────────────────►  │
+                                                                             │
+                                               keep going in the background  │
+                                                                             ▼
+                                        reserve of 10 ──► next press is instant
 ```
 
+The line is measured *during* the liveness stage rather than before everything, because
+nothing needs it until the speed test and the probe is a full-throttle download — sharing the
+radio with the source fetches would measure the line as slower than it is and quietly lower
+the bar every server is then judged against. A cached measurement (six hours, per network)
+skips it entirely.
+
 While it runs you get a countdown and a seven-step timeline rather than a spinner, so a slow
-step is visible as a slow step instead of as a hang.
+step is visible as a slow step instead of as a hang. Each run ends by naming where its own
+wall clock went — `line 8.1s · fetch 7.6s · probe 19.8s · …` — which is also how you find out
+which rung of the route ladder worked on a network that blocks the first one.
 
 ---
 

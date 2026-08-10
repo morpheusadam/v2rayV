@@ -101,6 +101,10 @@ class MainRepository(
                     safeIntent.getStringExtra("content").orEmpty()
                 )
 
+                AppConfig.MSG_SMART_SWITCH -> MainServiceEvent.SmartSwitched(
+                    safeIntent.getStringExtra("content").orEmpty()
+                )
+
                 AppConfig.MSG_AUTOMODE_SPEED -> {
                     val sample = JsonUtil.fromJsonSafe(
                         safeIntent.getStringExtra("content").orEmpty(),

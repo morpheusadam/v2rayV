@@ -13,6 +13,7 @@ import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
+import com.v2ray.ang.automode.SmartSwitchController
 import com.v2ray.ang.core.CoreServiceManager
 import com.v2ray.ang.dto.TrafficStatsMessage
 import com.v2ray.ang.dto.entities.ProfileItem
@@ -162,6 +163,9 @@ object NotificationManager {
             it.cancel()
             speedNotificationJob = null
             updateNotification("", 0, 0)
+            // The counters stop here — on a screen-off as well as on a disconnection — and
+            // a tunnel must never be judged on evidence from before the gap.
+            SmartSwitchController.reset()
         }
     }
 
@@ -295,6 +299,16 @@ object NotificationManager {
         }
 
         publishTrafficStats(proxyUplink, proxyDownlink, sinceLastQueryInSeconds)
+
+        // The only place in the app where live proxied throughput is known — the core's
+        // counters reset when read, so there is exactly one reader and this is it.
+        getService()?.let { service ->
+            SmartSwitchController.onTrafficSample(
+                context = service,
+                upBytesPerSec = (proxyUplink / sinceLastQueryInSeconds).toLong(),
+                downBytesPerSec = (proxyDownlink / sinceLastQueryInSeconds).toLong(),
+            )
+        }
 
         lastQueryTime = queryTime
         return zeroSpeed
