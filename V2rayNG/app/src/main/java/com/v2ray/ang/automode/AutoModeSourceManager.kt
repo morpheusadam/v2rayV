@@ -25,6 +25,18 @@ object AutoModeSourceManager {
     private const val DEAD_STREAK_LIMIT = 5
     private const val RESURRECT_EVERY_RUNS = 5
 
+    /**
+     * How many links a catalog refresh may take, from the top.
+     *
+     * The published catalog grew from 76 links to over 1,500 once its generator started
+     * searching GitHub, and the whole store is one JSON blob that [save] rewrites in full
+     * several times a run — main-thread parsing of a much smaller version of it has already
+     * caused one ANR. Bounded here rather than there, because a run uses eight sources and
+     * the sampler needs to pull each one repeatedly before its evidence means anything:
+     * fifteen hundred sources is not a wider net, it is the same net with nothing learned.
+     */
+    private const val CATALOG_MERGE_LIMIT = 400
+
     private val storage by lazy { MMKV.mmkvWithID(ID_AUTO_MODE, MMKV.MULTI_PROCESS_MODE) }
 
     @Volatile
@@ -142,7 +154,10 @@ object AutoModeSourceManager {
         val known = store.sources.map { it.url }.toHashSet()
 
         var added = 0
-        for (raw in urls) {
+        // Taken from the top rather than in full. The catalog is generated best-first —
+        // ordered by how many of each source's servers answered, how recently it changed
+        // and how little of it is duplicated — so the first N are the N worth having.
+        for (raw in urls.take(CATALOG_MERGE_LIMIT)) {
             val url = normalizeUrl(raw) ?: continue
             if (known.add(url)) {
                 store.sources.add(AutoModeSource(url = url))
