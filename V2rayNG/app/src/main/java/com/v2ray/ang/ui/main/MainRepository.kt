@@ -13,6 +13,7 @@ import com.v2ray.ang.dto.AutoModeMessage
 import com.v2ray.ang.dto.AutoModeProgressMessage
 import com.v2ray.ang.dto.SubscriptionUpdateResult
 import com.v2ray.ang.dto.TestServiceMessage
+import com.v2ray.ang.dto.TrafficStatsMessage
 import com.v2ray.ang.dto.entities.ProfileItem
 import com.v2ray.ang.dto.entities.ServerAffiliationInfo
 import com.v2ray.ang.dto.entities.SubscriptionCache
@@ -21,6 +22,7 @@ import com.v2ray.ang.handler.AngConfigManager
 import com.v2ray.ang.handler.AppLocaleManager
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsManager
+import com.v2ray.ang.handler.SpeedtestManager
 import com.v2ray.ang.handler.SubscriptionUpdater
 import com.v2ray.ang.helper.MessageHelper
 import com.v2ray.ang.util.JsonUtil
@@ -87,6 +89,18 @@ class MainRepository(
                 AppConfig.MSG_AUTOMODE_FINISH -> MainServiceEvent.AutoModeFinish(
                     safeIntent.getStringExtra("content").orEmpty()
                 )
+
+                AppConfig.MSG_TRAFFIC_STATS -> {
+                    val stats = JsonUtil.fromJsonSafe(
+                        safeIntent.getStringExtra("content").orEmpty(),
+                        TrafficStatsMessage::class.java
+                    )
+                    stats?.let {
+                        MainServiceEvent.TrafficStats(
+                            it.upSpeed, it.downSpeed, it.upTotal, it.downTotal, it.elapsedMillis
+                        )
+                    }
+                }
 
                 else -> null
             }
@@ -246,6 +260,8 @@ class MainRepository(
 
     override fun hasAutoModeSources(): Boolean =
         AutoModeSourceManager.reload().sources.any { it.enabled }
+
+    override fun queryRemoteIpInfo(): String? = SpeedtestManager.getRemoteIPInfo()
 
     override fun syncSubscriptions() {
         SubscriptionUpdater.sync(app)

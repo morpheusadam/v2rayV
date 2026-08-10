@@ -565,4 +565,18 @@
     <string name="automode_no_sources">هنوز هیچ منبع اشتراکی ثبت نشده. تنظیمات حالت خودکار را باز کنید و چند لینک بچسبانید.</string>
     <string name="automode_stop_button">توقف حالت خودکار %1$s</string>
 
+    <!-- Dashboard -->
+    <string name="dashboard_connected">متصل</string>
+    <string name="dashboard_connecting">در حال اتصال</string>
+    <string name="dashboard_not_connected">قطع</string>
+    <string name="dashboard_no_server">سروری انتخاب نشده</string>
+    <string name="dashboard_no_address">— · — · — · —</string>
+    <string name="dashboard_download">دانلود</string>
+    <string name="dashboard_upload">آپلود</string>
+    <string name="dashboard_downloaded">دریافت‌شده</string>
+    <string name="dashboard_uploaded">ارسال‌شده</string>
+    <string name="dashboard_automode_running">حالت خودکار %1$s</string>
+    <string name="dashboard_automode_hint">لینک‌ها را تست کن و سریع‌ترین سرورها را نگه دار</string>
+    <string name="dashboard_open_servers">فهرست سرورها</string>
+
 </resources>

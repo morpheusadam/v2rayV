@@ -194,6 +194,8 @@ object AppConfig {
     const val MSG_AUTOMODE_PROGRESS = 92
     const val MSG_AUTOMODE_FINISH = 93
 
+    const val MSG_TRAFFIC_STATS = 94
+
     /** Notification channel IDs and names. */
     // Use a new ID because Android does not let an app raise an existing channel's importance.
     const val RAY_NG_CHANNEL_ID = "CORE_M_CH_ID_V2"

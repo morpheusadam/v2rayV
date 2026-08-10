@@ -120,7 +120,9 @@ private fun AutoModeRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 16.dp, end = 4.dp),
+                // The floating action button hangs over this row's trailing edge, so the
+                // gear has to clear it or the two overlap and neither is reliably hittable.
+                .padding(start = 16.dp, end = 88.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(

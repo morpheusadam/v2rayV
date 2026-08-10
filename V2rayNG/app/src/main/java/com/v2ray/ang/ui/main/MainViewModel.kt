@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
 import com.v2ray.ang.automode.AutoModeProgress
+import com.v2ray.ang.automode.CountryHint
 import com.v2ray.ang.dto.GroupMapItem
 import com.v2ray.ang.dto.LocateTarget
 import com.v2ray.ang.dto.TestServiceMessage
@@ -17,6 +18,8 @@ import com.v2ray.ang.extension.isComplexType
 import com.v2ray.ang.extension.matchesPattern
 import com.v2ray.ang.extension.moveItem
 import com.v2ray.ang.ui.base.BaseViewModel
+import com.v2ray.ang.ui.dashboard.DashboardState
+import com.v2ray.ang.ui.dashboard.SAMPLE_WINDOW
 import com.v2ray.ang.util.LogUtil
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -61,6 +64,9 @@ class MainViewModel(
     )
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
+    /** Tries at the exit-location lookup before giving up for this session. */
+    private val IP_INFO_ATTEMPTS = 3
+
     // ---------- Keyword filtering ----------
     @Volatile
     private var keywordFilter: String = ""
@@ -75,6 +81,7 @@ class MainViewModel(
 
     private var setupGroupJob: Job? = null
     private var preloadJob: Job? = null
+    private var ipInfoJob: Job? = null
     private var selectedGroupLoadJob: Job? = null
     private var reloadJob: Job? = null
 
@@ -151,6 +158,23 @@ class MainViewModel(
                             running = event.running,
                             message = event.message,
                             remainingMillis = event.remainingMillis,
+                        )
+                    )
+                }
+            }
+
+            is MainServiceEvent.TrafficStats -> {
+                _uiState.update { state ->
+                    val dash = state.dashboard
+                    state.copy(
+                        dashboard = dash.copy(
+                            downSpeed = event.downSpeed,
+                            upSpeed = event.upSpeed,
+                            downTotal = event.downTotal,
+                            upTotal = event.upTotal,
+                            elapsedMillis = event.elapsedMillis,
+                            downSamples = (dash.downSamples + event.downSpeed).takeLast(SAMPLE_WINDOW),
+                            upSamples = (dash.upSamples + event.upSpeed).takeLast(SAMPLE_WINDOW),
                         )
                     )
                 }
@@ -806,14 +830,62 @@ class MainViewModel(
             state.copy(
                 isRunning = running,
                 statusText = if (!clearTestingText && state.isTesting) state.statusText
-                else if (running) connectedText else disconnectedText
+                else if (running) connectedText else disconnectedText,
+                dashboard = if (running) {
+                    state.dashboard.copy(
+                        connected = true,
+                        connecting = false,
+                        serverName = currentServerName(),
+                    )
+                } else {
+                    // A dropped tunnel invalidates every figure on the dashboard, including
+                    // the exit country — leaving the last reading up would be a lie.
+                    DashboardState(serverName = currentServerName())
+                }
             )
+        }
+
+        if (running) {
+            refreshExitLocation()
+        } else {
+            ipInfoJob?.cancel()
+        }
+    }
+
+    private fun currentServerName(): String =
+        uiState.value.selectedGuid?.let { dataSource.decodeServerConfig(it)?.remarks }.orEmpty()
+
+    /**
+     * Ask, through the tunnel, where the traffic actually comes out.
+     *
+     * Retried a few times because the lookup usually loses a race with the tunnel: the
+     * core reports running before its outbound has finished dialling, and the first
+     * request after that goes nowhere.
+     */
+    private fun refreshExitLocation() {
+        ipInfoJob?.cancel()
+        ipInfoJob = viewModelScope.launch(ioDispatcher) {
+            repeat(IP_INFO_ATTEMPTS) { attempt ->
+                delay(if (attempt == 0) 1500L else 4000L)
+                if (!uiState.value.isRunning) return@launch
+
+                val info = runCatching { dataSource.queryRemoteIpInfo() }.getOrNull()
+                if (!info.isNullOrBlank()) {
+                    val country = CountryHint.fromIpInfo(info)
+                    val address = info.substringAfter(')').trim().ifBlank { null }
+                    _uiState.update {
+                        it.copy(dashboard = it.dashboard.copy(country = country, ipAddress = address))
+                    }
+                    return@launch
+                }
+            }
         }
     }
 
     override fun onCleared() {
         setupGroupJob?.cancel()
         preloadJob?.cancel()
+        ipInfoJob?.cancel()
         selectedGroupLoadJob?.cancel()
         reloadJob?.cancel()
         filterJob?.cancel()

@@ -29,16 +29,88 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.v2ray.ang.dto.entities.ProfileItem
 import com.v2ray.ang.ui.compose.LocalDarkTheme
+import com.v2ray.ang.ui.dashboard.DashboardScreen
 import com.v2ray.ang.ui.compose.QRCodeDialog
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
+/**
+ * Two top-level pages: the dashboard the app opens on, and the server list a swipe away.
+ *
+ * The list page has a pager of its own for the groups. Nesting them works because the
+ * inner pager consumes the drag until it runs out of pages, and only then does the outer
+ * one take over — so swiping past the first group is what brings the dashboard back.
+ */
 @Composable
 fun MainScreen(
     mainViewModel: MainViewModel,
     onAction: (MainAction) -> Unit,
     onNavigate: (MainDestination) -> Unit,
+) {
+    val uiState by mainViewModel.uiState.collectAsStateWithLifecycle()
+    val rootPagerState = rememberPagerState(initialPage = 0, pageCount = { 2 })
+    val rootScope = rememberCoroutineScope()
+    val rootDrawerState = rememberDrawerState(DrawerValue.Closed)
+
+    // The drawer wraps the pager rather than living inside a page. A modal drawer nested
+    // in a horizontally scrolling page anchors itself to that page's moving origin, which
+    // leaves the sheet drifting across the screen with the swipe.
+    ModalNavigationDrawer(
+        drawerState = rootDrawerState,
+        drawerContent = {
+            MainDrawerContent(
+                drawerState = rootDrawerState,
+                onNavigate = { route ->
+                    rootScope.launch { rootDrawerState.close() }
+                    onNavigate(route)
+                }
+            )
+        }
+    ) {
+        HorizontalPager(
+            state = rootPagerState,
+            modifier = Modifier.fillMaxSize(),
+            beyondViewportPageCount = 1,
+            key = { page -> if (page == 0) "dashboard" else "servers" },
+        ) { page ->
+            if (page == 0) {
+                DashboardScreen(
+                    state = uiState.dashboard,
+                    autoModeRunning = uiState.autoMode.running,
+                    autoModeMessage = uiState.autoMode.message,
+                    autoModeRemaining = formatRemaining(uiState.autoMode.remainingMillis),
+                    onTogglePower = { onAction(MainAction.ToggleService) },
+                    onToggleAutoMode = { onAction(MainAction.ToggleAutoMode) },
+                    onAutoModeSettings = { onNavigate(MainDestination.AutoMode) },
+                    onOpenServers = { rootScope.launch { rootPagerState.animateScrollToPage(1) } },
+                    onOpenMenu = { rootScope.launch { rootDrawerState.open() } },
+                )
+            } else {
+                ServerListScreen(
+                    mainViewModel = mainViewModel,
+                    onAction = onAction,
+                    onNavigate = onNavigate,
+                    onOpenMenu = { rootScope.launch { rootDrawerState.open() } },
+                )
+            }
+        }
+    }
+}
+
+/** Blank rather than "0:00" before a stage has produced a figure to project. */
+private fun formatRemaining(remainingMillis: Long): String {
+    if (remainingMillis <= 0) return ""
+    val totalSeconds = remainingMillis / 1000
+    return "%d:%02d".format(totalSeconds / 60, totalSeconds % 60)
+}
+
+@Composable
+private fun ServerListScreen(
+    mainViewModel: MainViewModel,
+    onAction: (MainAction) -> Unit,
+    onNavigate: (MainDestination) -> Unit,
+    onOpenMenu: () -> Unit,
 ) {
     val uiState by mainViewModel.uiState.collectAsStateWithLifecycle()
     val groups = uiState.groups
@@ -51,7 +123,6 @@ fun MainScreen(
     val shareQRCodeBitmap = uiState.shareQRCodeBitmap
 
     val isDarkTheme = LocalDarkTheme.current
-    val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     var showSearch by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
@@ -185,18 +256,7 @@ fun MainScreen(
         QRCodeDialog(bitmap = shareQRCodeBitmap, onDismiss = { onAction(MainAction.DismissQRCodeDialog) })
     }
 
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        drawerContent = {
-            MainDrawerContent(
-                drawerState = drawerState,
-                onNavigate = { route ->
-                    scope.launch { drawerState.close() }
-                    onNavigate(route)
-                }
-            )
-        }
-    ) {
+    run {
         Scaffold(
             contentWindowInsets = ScaffoldDefaults.contentWindowInsets,
             topBar = {
@@ -214,7 +274,7 @@ fun MainScreen(
                         showSearch = false
                     },
                     onSearchToggle = { show: Boolean -> showSearch = show },
-                    onMenuClick = { scope.launch { drawerState.open() } },
+                    onMenuClick = onOpenMenu,
                     onAction = onAction,
                     onMoreMenuAction = { action ->
                         when (action) {

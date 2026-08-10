@@ -12,4 +12,11 @@ sealed class MainServiceEvent {
     data class MeasureConfigFinish(val finishedCount: String?) : MainServiceEvent()
     data class AutoModeProgress(val running: Boolean, val message: String, val remainingMillis: Long) : MainServiceEvent()
     data class AutoModeFinish(val message: String) : MainServiceEvent()
+    data class TrafficStats(
+        val upSpeed: Long,
+        val downSpeed: Long,
+        val upTotal: Long,
+        val downTotal: Long,
+        val elapsedMillis: Long,
+    ) : MainServiceEvent()
 }

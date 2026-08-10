@@ -14,9 +14,12 @@ import androidx.core.app.NotificationCompat
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
 import com.v2ray.ang.core.CoreServiceManager
+import com.v2ray.ang.dto.TrafficStatsMessage
 import com.v2ray.ang.dto.entities.ProfileItem
 import com.v2ray.ang.extension.toSpeedString
+import com.v2ray.ang.helper.MessageHelper
 import com.v2ray.ang.ui.main.MainActivity
+import com.v2ray.ang.util.JsonUtil
 import com.v2ray.ang.util.LogUtil
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -32,22 +35,34 @@ object NotificationManager {
     private const val NOTIFICATION_PENDING_INTENT_STOP_V2RAY = 1
     private const val NOTIFICATION_PENDING_INTENT_RESTART_V2RAY = 2
     private const val NOTIFICATION_ICON_THRESHOLD = 3000
-    private const val QUERY_INTERVAL_MS = 3000L
+
+    // One second rather than three: the dashboard draws a moving trace from these ticks,
+    // and at a three-second cadence it reads as broken rather than idle.
+    private const val QUERY_INTERVAL_MS = 1000L
 
     private var lastQueryTime = 0L
+    private var sessionStartMillis = 0L
+    private var sessionUpTotal = 0L
+    private var sessionDownTotal = 0L
     private var mBuilder: NotificationCompat.Builder? = null
     private var speedNotificationJob: Job? = null
     private var mNotificationManager: NotificationManager? = null
 
     /**
-     * Starts the speed notification.
-     * @param currentConfig The current profile configuration.
+     * Starts the traffic polling loop.
+     *
+     * Reading the core's counters resets them, so there can only be one reader: this loop
+     * feeds both the speed notification and the dashboard. It therefore runs whenever the
+     * tunnel is up, not only when the speed notification is switched on — with the
+     * notification itself still gated on that preference.
      */
     fun startSpeedNotification() {
-        if (MmkvManager.decodeSettingsBool(AppConfig.PREF_SPEED_ENABLED) != true) return
         if (speedNotificationJob != null || CoreServiceManager.isRunning() == false) return
 
         var lastZeroSpeed = false
+        sessionStartMillis = System.currentTimeMillis()
+        sessionUpTotal = 0
+        sessionDownTotal = 0
 
         speedNotificationJob = CoroutineScope(Dispatchers.IO).launch {
             while (isActive) {
@@ -261,7 +276,9 @@ object NotificationManager {
         val proxyTotal = proxyUplink + proxyDownlink
         val directTotal = directUplink + directDownlink
         val zeroSpeed = proxyTotal + directTotal == 0L
-        if (!zeroSpeed || !lastZeroSpeed) {
+        if (MmkvManager.decodeSettingsBool(AppConfig.PREF_SPEED_ENABLED) == true &&
+            (!zeroSpeed || !lastZeroSpeed)
+        ) {
             val text = StringBuilder()
             appendSpeedString(
                 text, AppConfig.TAG_PROXY,
@@ -276,8 +293,31 @@ object NotificationManager {
             )
             updateNotification(text.toString(), proxyTotal, directTotal)
         }
+
+        publishTrafficStats(proxyUplink, proxyDownlink, sinceLastQueryInSeconds)
+
         lastQueryTime = queryTime
         return zeroSpeed
+    }
+
+    /**
+     * Hand this tick's figures to the UI. Only proxied traffic counts — what the dashboard
+     * is reporting is what went through the tunnel, and direct traffic did not.
+     */
+    private fun publishTrafficStats(uplink: Long, downlink: Long, seconds: Double) {
+        val service = getService() ?: return
+
+        sessionUpTotal += uplink
+        sessionDownTotal += downlink
+
+        val stats = TrafficStatsMessage(
+            upSpeed = if (seconds > 0) (uplink / seconds).toLong() else 0,
+            downSpeed = if (seconds > 0) (downlink / seconds).toLong() else 0,
+            upTotal = sessionUpTotal,
+            downTotal = sessionDownTotal,
+            elapsedMillis = if (sessionStartMillis > 0) System.currentTimeMillis() - sessionStartMillis else 0,
+        )
+        MessageHelper.sendMsg2UI(service, AppConfig.MSG_TRAFFIC_STATS, JsonUtil.toJson(stats))
     }
 
     /**

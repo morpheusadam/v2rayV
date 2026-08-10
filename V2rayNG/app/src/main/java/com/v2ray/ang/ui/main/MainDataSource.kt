@@ -67,6 +67,12 @@ interface MainDataSource : Closeable {
     /** False when there is nothing for a run to draw on, so the UI can say so up front. */
     fun hasAutoModeSources(): Boolean
 
+    /**
+     * Country and address the traffic is coming out of, asked through the running tunnel.
+     * Blocking, and null when nothing is connected.
+     */
+    fun queryRemoteIpInfo(): String?
+
     fun syncSubscriptions()
     fun initAssets()
 }

@@ -17,7 +17,8 @@ data class MainUiState(
     val confirmRemove: Boolean = false,
     val doubleColumnDisplay: Boolean = false,
     val shareQRCodeBitmap: android.graphics.Bitmap? = null,
-    val autoMode: com.v2ray.ang.automode.AutoModeProgress = com.v2ray.ang.automode.AutoModeProgress()
+    val autoMode: com.v2ray.ang.automode.AutoModeProgress = com.v2ray.ang.automode.AutoModeProgress(),
+    val dashboard: com.v2ray.ang.ui.dashboard.DashboardState = com.v2ray.ang.ui.dashboard.DashboardState()
 )
 
 /**

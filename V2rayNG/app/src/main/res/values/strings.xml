@@ -565,4 +565,18 @@
     <string name="automode_no_sources">No subscription sources yet. Open Auto Mode settings and paste some links.</string>
     <string name="automode_stop_button">Stop Auto Mode %1$s</string>
 
+    <!-- Dashboard -->
+    <string name="dashboard_connected">Connected</string>
+    <string name="dashboard_connecting">Connecting</string>
+    <string name="dashboard_not_connected">Not connected</string>
+    <string name="dashboard_no_server">No server selected</string>
+    <string name="dashboard_no_address">— · — · — · —</string>
+    <string name="dashboard_download">Download</string>
+    <string name="dashboard_upload">Upload</string>
+    <string name="dashboard_downloaded">Downloaded</string>
+    <string name="dashboard_uploaded">Uploaded</string>
+    <string name="dashboard_automode_running">Auto Mode %1$s</string>
+    <string name="dashboard_automode_hint">Test your links and keep the fastest servers</string>
+    <string name="dashboard_open_servers">Server list</string>
+
 </resources>
