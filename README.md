@@ -1,90 +1,102 @@
-# v2rayNG
+# v2rayV
 
-A V2Ray client for Android, support [Xray core](https://github.com/XTLS/Xray-core) and [v2fly core](https://github.com/v2fly/v2ray-core)
+A V2Ray/Xray client for Android that finds working servers for you. One press tests your
+subscription links and keeps the fastest servers — no more hunting through a list of dead
+entries every morning.
+
+Built on [2dust/v2rayNG](https://github.com/2dust/v2rayNG), carrying the Auto Mode feature
+from its desktop sibling [v2rayN-Pro-Max](https://github.com/morpheusadam/v2rayN-Pro-Max).
 
 [![API](https://img.shields.io/badge/API-24%2B-yellow.svg?style=flat)](https://developer.android.com/about/versions/lollipop)
 [![Kotlin Version](https://img.shields.io/badge/Kotlin-2.4.0-blue.svg)](https://kotlinlang.org)
-[![GitHub commit activity](https://img.shields.io/github/commit-activity/m/2dust/v2rayNG)](https://github.com/2dust/v2rayNG/commits/master)
-[![CodeFactor](https://www.codefactor.io/repository/github/2dust/v2rayng/badge)](https://www.codefactor.io/repository/github/2dust/v2rayng)
-[![GitHub Releases](https://img.shields.io/github/downloads/2dust/v2rayNG/latest/total?logo=github)](https://github.com/2dust/v2rayNG/releases)
-[![Chat on Telegram](https://img.shields.io/badge/Chat%20on-Telegram-brightgreen.svg)](https://t.me/v2rayn)
+[![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
+
+> **Status: pre-release.** Auto Mode has been verified end to end on a real phone. There is
+> no published release yet — build from source for now.
 
 ---
 
-## Download / 下载
+## What is different from v2rayNG
 
-Download the latest release here:
+### Auto Mode
 
-在这里下载最新版本：
+One button. It fetches your subscription sources, imports what it finds, filters, measures,
+and keeps the winners as ready-to-use servers.
 
-[https://github.com/2dust/v2rayNG/releases](https://github.com/2dust/v2rayNG/releases)
+The pipeline is `fetch → import → filter → tcping → real ping → speed test → keep winners`.
+A run on a real phone produced five ranked servers, `5.7 MB/s · 30 ms` down to
+`0.3 MB/s · 571 ms`.
 
-> [!TIP]
-> v2rayNG is the mobile version. For the desktop version, please visit the v2rayN \
-> v2rayNG 是手机版，电脑版请访问 v2rayN
->
-> https://github.com/2dust/v2rayN
+A few things it does deliberately:
 
----
+- **TCP reachability drops hosts, it never ranks them.** Measured on a real pool, ranking by
+  lowest tcping passed 2.1% against 7.5% for a random draw — the fastest-answering hosts are
+  CDN edges fronting dead proxies.
+- **Speed tests run strictly one at a time.** Two downloads racing over one radio measure the
+  radio, not the servers.
+- **A server that wins again keeps its existing entry**, so the one you selected — and the one
+  the tunnel is running on — does not get deleted out from under you.
+- **Bare subscription URLs found inside a fetched body are stripped** before import, so a source
+  that is really a list of other subscriptions cannot silently add itself to your sources.
+- Source health is tracked with [Thompson sampling](https://en.wikipedia.org/wiki/Thompson_sampling)
+  over Beta evidence, so sources that keep producing good servers get tried more often.
 
-### Geoip and Geosite
+Per-source statistics, filters and the source list live under **Auto Mode → Sources**.
 
-- geoip.dat and geosite.dat files are in `Android/data/com.v2ray.ang/files/assets` (path may differ on some Android device)
-- download feature will get enhanced version in this [repo](https://github.com/Loyalsoldier/v2ray-rules-dat) (note: it needs a working proxy)
-- latest official [domain list](https://github.com/Loyalsoldier/v2ray-rules-dat) and [ip list](https://github.com/Loyalsoldier/geoip) can be imported manually
-- possible to use a third-party dat file in the same folder, like [h2y](https://guide.v2fly.org/routing/sitedata.html#%E5%A4%96%E7%BD%AE%E7%9A%84%E5%9F%9F%E5%90%8D%E6%96%87%E4%BB%B6)
+### Dashboard
 
-More in our [wiki](https://github.com/2dust/v2rayNG/wiki)
+The app opens on a dashboard instead of the server list — connection state, live throughput,
+session traffic and the Auto Mode button on one screen. The server list is one swipe to the right.
 
-### Geoip 与 Geosite
+It is a fixed dark instrument panel rather than a Material theme, with segmented tick rings,
+bars and sparklines drawn on Canvas — quantised on purpose, so a jittering measurement reads
+as an instrument rather than implying precision it does not have.
 
-- geoip.dat 和 geosite.dat 文件位于 `Android/data/com.v2ray.ang/files/assets`（部分设备路径可能不同）
-- 下载功能将获取该 [仓库](https://github.com/Loyalsoldier/v2ray-rules-dat) 中的增强版本（注意：此功能需要一个可用的代理）
-- 最新官方 [域名列表](https://github.com/Loyalsoldier/v2ray-rules-dat) 和 [IP 列表](https://github.com/Loyalsoldier/geoip) 可手动导入
-- 也可在同一文件夹中使用第三方 dat 文件，例如 [h2y](https://guide.v2fly.org/routing/sitedata.html#%E5%A4%96%E7%BD%AE%E7%9A%84%E5%9F%9F%E5%90%8D%E6%96%87%E4%BB%B6)
+### Separate app
 
-更多内容请见我们的 [wiki](https://github.com/2dust/v2rayNG/wiki)
-
----
-
-## Development guide / 开发指南
-
-### Note
-
-- Android project under the V2rayNG folder can be compiled directly in Android Studio, or using the Gradle wrapper. But the v2ray core inside the aar is (probably) outdated.
-- The aar can be compiled from the Golang project [AndroidLibV2rayLite](https://github.com/2dust/AndroidLibV2rayLite) or [AndroidLibXrayLite](https://github.com/2dust/AndroidLibXrayLite). For a quick start, read the guides for [Go Mobile](https://github.com/golang/go/wiki/Mobile) and [Makefiles for Go Developers](https://tutorialedge.net/golang/makefiles-for-go-developers/).
-- v2rayNG can run on Android Emulators. For WSA, VPN permission needs to be granted via `appops set [package name] ACTIVATE_VPN allow`.
-
-### 提示
-
-- V2rayNG 文件夹下的 Android 项目可直接在 Android Studio 中编译，或使用 Gradle wrapper 编译。但 aar 内置的 v2ray core（可能）已过时。
-- aar 可由 Golang 项目 [AndroidLibV2rayLite](https://github.com/2dust/AndroidLibV2rayLite) 或 [AndroidLibXrayLite](https://github.com/2dust/AndroidLibXrayLite) 编译而成。快速入门可参考 [Go Mobile](https://github.com/golang/go/wiki/Mobile) 指南和 [Makefiles for Go Developers](https://tutorialedge.net/golang/makefiles-for-go-developers/)。
-- v2rayNG 可在 Android 模拟器上运行。对于 WSA，需要通过 `appops set [package name] ACTIVATE_VPN allow` 授予 VPN 权限。
+`applicationId` is `com.v2rayv.app`, so v2rayV installs alongside v2rayNG with its own data,
+its own launcher icon and its own notification mark.
 
 ---
 
+## Building
 
-## GPG Verification / GPG 签名校验
+Requires JDK 21, Android SDK platform 37 with build-tools 37.0.0, and NDK 29.
 
-Release files are signed with GPG to verify authenticity and integrity, helping prevent mirror, ISP, or CDN hijacking.
-
-发布文件已使用 GPG 签名，可用于校验文件真实性与完整性，预防镜像站、运营商或 CDN 劫持。
-
-### Fingerprint / 公钥指纹
-
-```text
-7694 5E9F 3E9A 168F 8070 F195 805D 661C
-134D FAF6 8903 C199 463C 31E5 AE90 3AE0
+```bash
+cd V2rayNG
+./gradlew assemblePlaystoreDebug -PABI_FILTERS=arm64-v8a
+./gradlew testPlaystoreDebugUnitTest --tests "com.v2ray.ang.automode.*"
 ```
 
+Two things are not in the repository and must be fetched before the first build:
+
+- **`libv2ray.aar`** — 56 MB, from the [AndroidLibXrayLite releases](https://github.com/2dust/AndroidLibXrayLite/releases)
+  whose tag matches the pinned submodule. Drop it in `V2rayNG/app/libs/`.
+- **The `hev-socks5-tunnel` native libraries.** Run `compile-hevtun.ps1` (Windows) to build them
+  into `V2rayNG/app/libs/<abi>/`. On Windows this also materialises the submodule's git-symlink
+  headers as real files, without which the compiler reads a path string as C.
+
+The Kotlin namespace stays `com.v2ray.ang` even though the application id changed — hev registers
+its JNI methods against that package name.
+
+### Notes inherited from upstream
+
+- geoip.dat and geosite.dat live in `Android/data/com.v2rayv.app/files/assets` (the path differs on
+  some devices). The download feature pulls the enhanced build from
+  [v2ray-rules-dat](https://github.com/Loyalsoldier/v2ray-rules-dat), which needs a working proxy first.
+- The aar can be rebuilt from [AndroidLibXrayLite](https://github.com/2dust/AndroidLibXrayLite).
+- On WSA, VPN permission needs `appops set com.v2rayv.app ACTIVATE_VPN allow`.
+
 ---
 
-## Community / 社区
+## Credits and licence
 
-Telegram Group / Telegram 群组：
+v2rayV is a fork of [v2rayNG](https://github.com/2dust/v2rayNG) by [2dust](https://github.com/2dust),
+which does all of the heavy lifting — the cores, the protocols, the tunnel. Auto Mode and the
+dashboard are the additions here.
 
-[https://t.me/v2rayN](https://t.me/v2rayN)
+Licensed under **GPL-3.0**, the same as upstream. See [LICENSE](LICENSE).
 
-Telegram Channel / Telegram 频道：
-
-[https://t.me/github_2dust](https://t.me/github_2dust)
+Cores: [Xray-core](https://github.com/XTLS/Xray-core) · [v2fly-core](https://github.com/v2fly/v2ray-core) ·
+[hev-socks5-tunnel](https://github.com/heiher/hev-socks5-tunnel)
