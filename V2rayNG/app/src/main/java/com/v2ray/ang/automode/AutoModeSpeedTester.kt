@@ -7,6 +7,7 @@ import com.v2ray.ang.AppConfig
 import com.v2ray.ang.core.CoreConfigManager
 import com.v2ray.ang.core.CoreNativeManager
 import com.v2ray.ang.dto.IPAPIInfo
+import com.v2ray.ang.dto.entities.ProfileItem
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.util.JsonUtil
 import com.v2ray.ang.util.LogUtil
@@ -46,47 +47,102 @@ object AutoModeSpeedTester {
     private const val LOOPBACK = "127.0.0.1"
 
     /**
-     * Runs one server through a download and an exit-country lookup.
+     * A test core that is up and listening on loopback, waiting for a download.
      *
+     * Separated from the measurement so the next server's core can be started while the
+     * current one's download is still running. That does not break the one-at-a-time rule:
+     * the rule exists because two *downloads* over one radio measure the radio, and
+     * starting a core binds a local socket and initialises the outbound without sending
+     * anything over the air.
+     */
+    class WarmCore internal constructor(
+        val guid: String,
+        internal val profile: ProfileItem,
+        internal val controller: CoreController?,
+        internal val proxy: Proxy?,
+    ) {
+        /** True when the core came up and can actually be measured through. */
+        internal val usable: Boolean get() = controller != null && proxy != null
+
+        internal fun stop() {
+            try {
+                controller?.stopLoop()
+            } catch (e: Exception) {
+                LogUtil.e(AppConfig.TAG, "AutoMode: failed to stop test core for $guid", e)
+            }
+        }
+    }
+
+    /**
+     * Brings up a throwaway core for [guid] and waits for it to bind.
+     *
+     * @return null only when the profile or its config could not be read at all; a core
+     *         that failed to start still comes back as an unusable [WarmCore], so the
+     *         caller can report a zero measurement rather than silently skipping a server.
+     */
+    fun start(context: Context, guid: String): WarmCore? {
+        val profile = MmkvManager.decodeServerConfig(guid) ?: return null
+
+        val port = Utils.findRandomFreePort()
+        val config = buildConfigWithSocksInbound(context, guid, port)
+            ?: return WarmCore(guid, profile, null, null)
+
+        return try {
+            val controller = CoreNativeManager.newCoreController(SilentCallback())
+            controller.startLoop(config, 0)
+            if (!awaitCoreRunning(controller)) {
+                LogUtil.w(AppConfig.TAG, "AutoMode: test core did not come up for $guid")
+                try {
+                    controller.stopLoop()
+                } catch (_: Exception) {
+                    // Already on the failure path; nothing useful to do about it.
+                }
+                return WarmCore(guid, profile, null, null)
+            }
+            WarmCore(guid, profile, controller, Proxy(Proxy.Type.SOCKS, InetSocketAddress(LOOPBACK, port)))
+        } catch (e: Exception) {
+            LogUtil.e(AppConfig.TAG, "AutoMode: could not start a test core for $guid", e)
+            WarmCore(guid, profile, null, null)
+        }
+    }
+
+    /**
+     * Runs one download through [warm], then asks where the traffic came out. Stops the
+     * core on the way out, whatever happened.
+     *
+     * @param onThroughput fired the moment throughput is known, *before* the exit-country
+     *        lookup. The country is a label — [AutoModeEngine.isAcceptable] does not read
+     *        it — so a user who pressed a button should not wait a round trip through the
+     *        tunnel for a flag before being connected.
      * @return the measurement, with [AutoModeMeasurement.speedMbps] left at zero when the
      *         server could not carry the download at all.
      */
     fun measure(
-        context: Context,
-        guid: String,
+        warm: WarmCore,
         onSample: (Double) -> Unit = {},
-    ): AutoModeMeasurement? {
-        val profile = MmkvManager.decodeServerConfig(guid) ?: return null
-        val measurement = AutoModeMeasurement(guid = guid, profile = profile)
+        onThroughput: (AutoModeMeasurement) -> Unit = {},
+    ): AutoModeMeasurement {
+        val measurement = AutoModeMeasurement(guid = warm.guid, profile = warm.profile)
 
-        val port = Utils.findRandomFreePort()
-        val config = buildConfigWithSocksInbound(context, guid, port) ?: return measurement
-
-        var controller: CoreController? = null
         try {
-            controller = CoreNativeManager.newCoreController(SilentCallback())
-            controller.startLoop(config, 0)
-            if (!awaitCoreRunning(controller)) {
-                LogUtil.w(AppConfig.TAG, "AutoMode: test core did not come up for $guid")
+            val proxy = warm.proxy
+            if (!warm.usable || proxy == null) {
                 return measurement
             }
 
-            val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress(LOOPBACK, port))
             // Shared with the baseline measurement on purpose — the two numbers are
             // divided by one another, so they have to be the same measurement.
             measurement.speedMbps = ThroughputProbe.measure(proxy, onSample)
+            onThroughput(measurement)
+
             // Only worth a round trip when the tunnel proved it carries traffic.
             if (measurement.speedMbps > 0) {
                 measurement.exitCountry = CountryHint.fromIpInfo(lookupIpInfo(proxy))
             }
         } catch (e: Exception) {
-            LogUtil.e(AppConfig.TAG, "AutoMode: speed test failed for $guid", e)
+            LogUtil.e(AppConfig.TAG, "AutoMode: speed test failed for ${warm.guid}", e)
         } finally {
-            try {
-                controller?.stopLoop()
-            } catch (e: Exception) {
-                LogUtil.e(AppConfig.TAG, "AutoMode: failed to stop test core", e)
-            }
+            warm.stop()
         }
 
         return measurement

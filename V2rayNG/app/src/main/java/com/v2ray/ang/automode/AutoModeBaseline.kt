@@ -47,27 +47,31 @@ object AutoModeBaseline {
     const val UNKNOWN = 0.0
 
     /**
-     * The current baseline, measured if the stored one is missing, stale, or was taken on
-     * a different kind of network.
+     * The stored baseline when it still applies, and null when it has to be taken again.
      *
-     * @return MB/s, or [UNKNOWN] when it could not be measured.
+     * Deciding this separately from taking the measurement is what lets a run choose *when*
+     * to pay for it. The probe is a full-throttle download, so it must not share the radio
+     * with the source fetches — that would measure the line as slower than it is and quietly
+     * lower the bar every server is then judged against. It is free to run alongside the TCP
+     * liveness stage, which opens many short connections and moves almost no bytes.
      */
-    suspend fun get(
+    fun cached(context: Context): Double? {
+        val store = AutoModeSourceManager.getStore()
+        val network = networkKey(context)
+        if (!isFresh(store, network)) {
+            return null
+        }
+        LogUtil.i(AppConfig.TAG, "AutoMode: reusing baseline ${store.baselineMbps} MB/s on $network")
+        return store.baselineMbps
+    }
+
+    /** Takes a fresh measurement and stores it. */
+    suspend fun measure(
         context: Context,
-        force: Boolean = false,
         onProgress: (String) -> Unit = {},
         onSample: (Double) -> Unit = {},
     ): Double =
         withContext(Dispatchers.IO) {
-            val store = AutoModeSourceManager.getStore()
-            val network = networkKey(context)
-
-            if (!force && isFresh(store, network)) {
-                LogUtil.i(AppConfig.TAG, "AutoMode: reusing baseline ${store.baselineMbps} MB/s on $network")
-                return@withContext store.baselineMbps
-            }
-
-            onProgress("Measuring your connection…")
             val measured = ThroughputProbe.measure(onSample = onSample)
 
             if (measured < MIN_CREDIBLE_MBPS) {
@@ -76,9 +80,10 @@ object AutoModeBaseline {
                 return@withContext UNKNOWN
             }
 
+            val store = AutoModeSourceManager.getStore()
             store.baselineMbps = measured
             store.baselineMillis = System.currentTimeMillis()
-            store.baselineNetwork = network
+            store.baselineNetwork = networkKey(context)
             AutoModeSourceManager.save()
 
             onProgress("Your connection: ${format(measured)}.")

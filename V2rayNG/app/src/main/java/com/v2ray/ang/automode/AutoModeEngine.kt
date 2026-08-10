@@ -12,7 +12,9 @@ import com.v2ray.ang.service.RealPingWorkerService
 import com.v2ray.ang.util.LogUtil
 import com.v2ray.ang.util.Utils
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -123,6 +125,38 @@ class AutoModeEngine(
     private val stopped = AtomicBoolean(false)
 
     /**
+     * Wall clock spent in each stage, in the order they ran.
+     *
+     * Every latency judgement about this pipeline has so far come from [estimateSeconds],
+     * which exists to drive a countdown and was never evidence. This is a clock, and it is
+     * reported at the end of a run so a screenshot from a censored network says *where* the
+     * time went instead of only that it was slow.
+     */
+    private val stageMillis = linkedMapOf<AutoModeStage, Long>()
+    private var currentStage: AutoModeStage? = null
+    private var currentStageNanos = 0L
+
+    /** Starts [stage], booking the wall clock the previous one spent. */
+    private fun beginStage(stage: AutoModeStage) {
+        closeStage()
+        currentStage = stage
+        currentStageNanos = System.nanoTime()
+        onStage(stage)
+    }
+
+    private fun closeStage() {
+        val stage = currentStage ?: return
+        val millis = (System.nanoTime() - currentStageNanos) / 1_000_000
+        stageMillis[stage] = (stageMillis[stage] ?: 0L) + millis
+        currentStage = null
+    }
+
+    /** One line naming where the run's wall clock actually went. */
+    fun timingLine(): String = stageMillis.entries.joinToString(" · ") { (stage, millis) ->
+        "${stage.label} ${String.format(java.util.Locale.US, "%.1f", millis / 1000.0)}s"
+    }
+
+    /**
      * Pool guid to the guid it was published under, so the final ranking rewrites the
      * early winner's entry instead of replacing it with a copy and deleting the original
      * out from under a live tunnel.
@@ -137,6 +171,14 @@ class AutoModeEngine(
 
     suspend fun run(): AutoModeRunResult = withContext(Dispatchers.IO) {
         val result = AutoModeRunResult()
+
+        /**
+         * The line measurement, when it could not be answered from cache. Held rather than
+         * awaited so it can run under the liveness stage; cancelled in the finally, because
+         * a run that bailed out early has nothing left to compare against and the probe
+         * would otherwise hold a socket for six more seconds.
+         */
+        var pendingBaseline: Deferred<Double>? = null
         var sources: List<AutoModeSource> = emptyList()
         var fetched: Map<String, FetchResult> = emptyMap()
         var poolBySource: Map<String, List<ServerRef>> = emptyMap()
@@ -154,25 +196,33 @@ class AutoModeEngine(
             store.lastRunMillis = System.currentTimeMillis()
 
             // ---- what is this connection capable of --------------------------------
-            // Measured first because everything after it is a ratio against this number,
-            // including the point at which the run stops looking and connects.
-            onStage(AutoModeStage.MEASURING)
-            baselineMbps = AutoModeBaseline.get(
-                context,
-                onProgress = ::report,
-                onSample = { mbps -> onSpeedSample(mbps, true) },
-            )
-            result.baselineMbps = baselineMbps
-            acceptThreshold = AutoModeBaseline.acceptThreshold(baselineMbps, store)
+            // Everything after this is a ratio against this number, including the point at
+            // which the run stops looking and connects — but nothing needs it until the
+            // speed test, which is the last stage of all.
+            //
+            // So a cached baseline is taken here and a stale one is deferred rather than
+            // waited on. Where it gets taken matters: the probe is a full-throttle download
+            // and must not share the radio with the source fetches, which would measure the
+            // line as slower than it is and quietly lower the bar every server is judged
+            // against. The liveness stage is the safe window — thousands of short
+            // connections that move almost no bytes — so that is where it goes.
+            beginStage(AutoModeStage.MEASURING)
+            val cachedBaseline = AutoModeBaseline.cached(context)
+            if (cachedBaseline != null) {
+                baselineMbps = cachedBaseline
+                report("Your connection: ${AutoModeBaseline.format(baselineMbps)}.")
+            } else {
+                report("Measuring your connection alongside the first tests…")
+            }
 
             if (isStopped()) return@withContext cancelled(result)
 
             // ---- find a way out, if the direct one is blocked ----------------------
-            onStage(AutoModeStage.ROUTING)
+            beginStage(AutoModeStage.ROUTING)
             proxy = resolveRoute(store)
 
             // ---- top up the source list from the catalog ---------------------------
-            onStage(AutoModeStage.FETCHING)
+            beginStage(AutoModeStage.FETCHING)
             refreshCatalog(store, proxy)
             if (store.sources.none { it.enabled }) {
                 result.message = "No usable subscription sources could be reached."
@@ -197,7 +247,7 @@ class AutoModeEngine(
             if (isStopped()) return@withContext cancelled(result)
 
             // ---- import candidates -------------------------------------------------
-            onStage(AutoModeStage.IMPORTING)
+            beginStage(AutoModeStage.IMPORTING)
             poolBySource = importCandidates(sources, fetched)
 
             // The downloaded bodies are megabytes each and nothing after this point reads
@@ -230,7 +280,19 @@ class AutoModeEngine(
                     + (MAX_SPEED_TEST * SPEED_TEST_SECONDS)
             )
 
-            onStage(AutoModeStage.PROBING)
+            beginStage(AutoModeStage.PROBING)
+            // Launched here rather than awaited here: the liveness stage is the one window
+            // in the run where a download does not distort anything. See the note above.
+            if (cachedBaseline == null) {
+                pendingBaseline = async(Dispatchers.IO) {
+                    AutoModeBaseline.measure(
+                        context,
+                        onProgress = ::report,
+                        onSample = { mbps -> onSpeedSample(mbps, true) },
+                    )
+                }
+            }
+
             val live = tcpingStage(candidates)
             result.tcpAlive = live.size
             report("${live.size} of ${min(candidates.size, MAX_TCPING)} endpoints answered.")
@@ -243,7 +305,7 @@ class AutoModeEngine(
             if (isStopped()) return@withContext cancelled(result)
 
             // ---- real ping: the stage that actually proves a proxy works ------------
-            onStage(AutoModeStage.TUNNELING)
+            beginStage(AutoModeStage.TUNNELING)
             val target = max(store.topCount * 2, 12)
             val working = realPingStage(live, target, realPingTested)
             workingIds = working.map { it.guid }.toSet()
@@ -265,7 +327,13 @@ class AutoModeEngine(
             if (isStopped()) return@withContext cancelled(result)
 
             // ---- speed test --------------------------------------------------------
-            onStage(AutoModeStage.MEASURING_SERVERS)
+            // The last possible moment the baseline can be needed, and by now it has had
+            // the whole liveness and tunnel stages to finish in.
+            beginStage(AutoModeStage.MEASURING_SERVERS)
+            pendingBaseline?.let { baselineMbps = it.await() }
+            result.baselineMbps = baselineMbps
+            acceptThreshold = AutoModeBaseline.acceptThreshold(baselineMbps, store)
+
             val measurements = speedTestStage(speedInput, acceptThreshold)
             result.speedTested = measurements.size
             result.acceptedMbps = measurements.firstOrNull { isAcceptable(it, acceptThreshold) }?.speedMbps ?: 0.0
@@ -301,6 +369,18 @@ class AutoModeEngine(
             report(result.message)
             return@withContext result
         } finally {
+            // A run that bailed out early leaves the baseline probe with nothing left to
+            // be measured for, and it holds a socket for six seconds if left alone.
+            pendingBaseline?.cancel()
+            // Carries whatever was known — the cached figure, or nothing — into a result
+            // that bailed out before the stage that would otherwise have set it.
+            result.baselineMbps = baselineMbps
+
+            closeStage()
+            result.timings = timingLine()
+            LogUtil.i(AppConfig.TAG, "AutoMode: timings — ${result.timings}")
+            report("Timing: ${result.timings}")
+
             // Runs even when a stage bailed out, so the scratch groups never survive a
             // run and the source health always reflects what actually happened.
             try {
@@ -555,6 +635,11 @@ class AutoModeEngine(
     /**
      * Keep testing batches until enough servers have proven they tunnel, or the budget
      * runs out. Batches are drawn in random order for the reason above.
+     *
+     * The target is now checked on every result rather than at the end of each batch. That
+     * matters more than it sounds: a batch is a hundred tests and the target is twenty, so
+     * a healthy pool used to spend four fifths of this stage proving servers it had already
+     * decided it did not need.
      */
     private suspend fun realPingStage(
         live: List<ServerRef>,
@@ -576,11 +661,20 @@ class AutoModeEngine(
             queue = queue.drop(batch.size)
 
             val batchStarted = System.currentTimeMillis()
-            val delays = runPingBatch(batch.map { it.guid }, onlyTcp = false)
+            // Counted rather than read off the map, because this is called from the
+            // worker's threads and the map it would otherwise size is still being filled.
+            val survivors = java.util.concurrent.atomic.AtomicInteger(working.size)
+            val delays = runPingBatch(batch.map { it.guid }, onlyTcp = false) { _, delayMillis ->
+                val enough = delayMillis in 1..MAX_ACCEPTABLE_DELAY
+                    && survivors.incrementAndGet() >= target
+                !enough && !isStopped()
+            }
             val batchSeconds = (System.currentTimeMillis() - batchStarted) / 1000.0
 
-            tested += batch.size
-            batch.forEach { testedIds.add(it.guid) }
+            // Only what actually got a result counts as tested: a batch cut short must not
+            // charge its sources for servers that were never tried.
+            tested += delays.size
+            delays.keys.forEach { testedIds.add(it) }
 
             working.addAll(batch.filter { (delays[it.guid] ?: -1L) in 1..MAX_ACCEPTABLE_DELAY })
 
@@ -651,38 +745,77 @@ class AutoModeEngine(
     private suspend fun speedTestStage(
         input: List<ServerRef>,
         acceptThreshold: Double,
-    ): List<AutoModeMeasurement> {
+    ): List<AutoModeMeasurement> = coroutineScope {
         val measurements = mutableListOf<AutoModeMeasurement>()
         var accepted = false
 
-        input.forEachIndexed { index, ref ->
-            if (isStopped() || !currentCoroutineContext().isActive) {
-                return@forEachIndexed
-            }
-            report("Speed testing ${index + 1}/${input.size}: ${ref.profile.remarks.take(40)}")
-            estimateSeconds((input.size - index) * SPEED_TEST_SECONDS)
+        // Cores that have been brought up but not yet measured through. Tracked so a run
+        // that is stopped mid-stage cannot leave one running.
+        val warmed = java.util.Collections.synchronizedList(mutableListOf<AutoModeSpeedTester.WarmCore>())
 
-            val measurement = AutoModeSpeedTester.measure(context, ref.guid) { mbps ->
-                onSpeedSample(mbps, false)
-            }
-            if (measurement != null) {
-                // The delay stages already proved this one tunnels; carry that number
-                // forward rather than paying for it twice.
-                measurement.delayMillis = MmkvManager.decodeServerAffiliationInfo(ref.guid)?.testDelayMillis ?: -1
-                measurements.add(measurement)
-
-                if (!accepted && isAcceptable(measurement, acceptThreshold)) {
-                    accepted = true
-                    publishEarlyWinner(measurement)
-                    report(
-                        "Good enough at ${formatSpeed(measurement.speedMbps)} — connecting now, "
-                            + "still filling the reserve."
-                    )
-                }
+        // Starting the next server's core while the current one downloads. This is
+        // pipelining, not parallelism: bringing a core up binds a loopback socket and
+        // initialises an outbound, and sends nothing over the air, so the rule that only
+        // one *download* may be in flight — the rule the whole ratio depends on — is
+        // untouched. NonCancellable because a half-started core still has to be stopped,
+        // and it is bounded by the core's own three-second start timeout anyway.
+        fun prewarm(next: ServerRef?): Deferred<AutoModeSpeedTester.WarmCore?>? = next?.let { ref ->
+            async(Dispatchers.IO + NonCancellable) {
+                AutoModeSpeedTester.start(context, ref.guid)?.also { warmed.add(it) }
             }
         }
 
-        return measurements
+        var warming = prewarm(input.firstOrNull())
+
+        try {
+            input.forEachIndexed { index, ref ->
+                if (isStopped() || !currentCoroutineContext().isActive) {
+                    return@forEachIndexed
+                }
+                report("Speed testing ${index + 1}/${input.size}: ${ref.profile.remarks.take(40)}")
+                estimateSeconds((input.size - index) * SPEED_TEST_SECONDS)
+
+                val warm = warming?.await()
+                warming = prewarm(input.getOrNull(index + 1))
+                if (warm == null) {
+                    return@forEachIndexed
+                }
+
+                // The delay stages already proved this one tunnels; carry that number
+                // forward rather than paying for it twice. Read before the download so the
+                // acceptance test below has it the moment throughput is known.
+                val knownDelay = MmkvManager.decodeServerAffiliationInfo(ref.guid)?.testDelayMillis ?: -1
+
+                val measurement = AutoModeSpeedTester.measure(
+                    warm = warm,
+                    onSample = { mbps -> onSpeedSample(mbps, false) },
+                    onThroughput = { throughput ->
+                        // Fired before the exit-country lookup, so the user is connected
+                        // while that round trip happens rather than after it.
+                        throughput.delayMillis = knownDelay
+                        if (!accepted && isAcceptable(throughput, acceptThreshold)) {
+                            accepted = true
+                            publishEarlyWinner(throughput)
+                            report(
+                                "Good enough at ${formatSpeed(throughput.speedMbps)} — connecting now, "
+                                    + "still filling the reserve."
+                            )
+                        }
+                    },
+                )
+                warmed.remove(warm)
+                measurement.delayMillis = knownDelay
+                measurements.add(measurement)
+            }
+        } finally {
+            withContext(NonCancellable) {
+                warming?.await()
+                synchronized(warmed) { warmed.toList() }.forEach { it.stop() }
+                warmed.clear()
+            }
+        }
+
+        measurements
     }
 
     fun isAcceptable(measurement: AutoModeMeasurement, acceptThreshold: Double): Boolean =
@@ -824,18 +957,42 @@ class AutoModeEngine(
     //region helpers
 
     /**
-     * Runs one batch of delay tests and waits for all of them, which is what lets the
-     * pipeline decide what to do next. [RealPingWorkerService] is callback-shaped because
-     * upstream drives it from a notification, so it is bridged to a suspend point here.
+     * Runs one batch of delay tests, handing each result to [onResult] as it lands and
+     * stopping the whole batch the moment [onResult] answers false.
+     *
+     * [RealPingWorkerService] has always emitted a [RealPingEvent.Result] per server — it is
+     * callback-shaped because upstream drives it from a notification. The old bridge here
+     * collected those into a map and resumed only on [RealPingEvent.Finish], which threw the
+     * streaming away: a stage that wanted twenty survivors still sat through all hundred
+     * tests. Nothing about the tests themselves changed; the caller is simply now allowed to
+     * say when it has enough.
+     *
+     * [onResult] is called from the worker's own threads, several at once, so it must be
+     * safe to call concurrently.
      */
-    private suspend fun runPingBatch(guids: List<String>, onlyTcp: Boolean): Map<String, Long> {
+    private suspend fun runPingBatch(
+        guids: List<String>,
+        onlyTcp: Boolean,
+        onResult: (guid: String, delayMillis: Long) -> Boolean = { _, _ -> true },
+    ): Map<String, Long> {
         if (guids.isEmpty()) {
             return emptyMap()
         }
 
         return suspendCancellableCoroutine { cont ->
             val results = java.util.concurrent.ConcurrentHashMap<String, Long>()
-            val worker = RealPingWorkerService(
+            // The batch can now end two ways — enough survivors, or every test finished —
+            // and both can be reached from several threads at once.
+            val settled = AtomicBoolean(false)
+            var worker: RealPingWorkerService? = null
+
+            fun finish() {
+                if (settled.compareAndSet(false, true) && cont.isActive) {
+                    cont.resume(HashMap(results))
+                }
+            }
+
+            worker = RealPingWorkerService(
                 context = context,
                 guids = guids,
                 onlyTcp = onlyTcp,
@@ -844,13 +1001,13 @@ class AutoModeEngine(
                         is RealPingEvent.Result -> {
                             results[event.guid] = event.delayMillis
                             MmkvManager.encodeServerTestDelayMillis(event.guid, event.delayMillis)
-                        }
-
-                        is RealPingEvent.Finish -> {
-                            if (cont.isActive) {
-                                cont.resume(HashMap(results))
+                            if (!settled.get() && !onResult(event.guid, event.delayMillis)) {
+                                worker?.cancel()
+                                finish()
                             }
                         }
+
+                        is RealPingEvent.Finish -> finish()
 
                         is RealPingEvent.Progress -> Unit
                     }

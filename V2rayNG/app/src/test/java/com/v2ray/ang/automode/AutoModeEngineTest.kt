@@ -50,6 +50,25 @@ class AutoModeEngineTest {
     )
 
     /**
+     * The labels are what the end-of-run timing line is read by — "line 8.1s · fetch 7.6s · …"
+     * — and a screenshot of that line is the only evidence a censored network will produce.
+     * Two stages sharing a label would silently merge into one entry.
+     */
+    @Test
+    fun `every stage has a distinct short label for the timing line`() {
+        val labels = AutoModeStage.entries.map { it.label }
+
+        assertEquals(labels.size, labels.distinct().size)
+        assertTrue(labels.none { it.isBlank() })
+    }
+
+    /** Nothing ran, so there is nothing to report — not a line of zeroes. */
+    @Test
+    fun `the timing line is empty before any stage has run`() {
+        assertEquals("", engine.timingLine())
+    }
+
+    /**
      * Asserted as a set, not a sequence: newcomers go through [AutoModeRanker.prioritise],
      * which shuffles within a tier on purpose, and "a" and "b" are the same endpoint at
      * the same tier. Which of the two survives is a coin toss and does not matter — that

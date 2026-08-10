@@ -96,6 +96,18 @@ data class AutoModeStore(
     var lastProxyMillis: Long = 0,
 
     /**
+     * Which rung of the route ladder answered last — an index into
+     * [AutoModeNetwork.mirrorsFor]'s list, with 0 meaning the host itself.
+     *
+     * The proxy has always been remembered; the route was not, so a network that blocks the
+     * host paid the whole ladder again on every fetch of every run. The rung generalises
+     * across URLs because every mirror is derived from the same template, so knowing that
+     * jsdelivr worked for one file is a good prior for the next.
+     */
+    var lastRouteIndex: Int = 0,
+    var lastRouteMillis: Long = 0,
+
+    /**
      * The user's own line speed in MB/s, measured with the same single-stream method the
      * servers are measured with so the two numbers can be compared at all.
      */
@@ -150,6 +162,16 @@ data class AutoModeRunResult(
     /** Throughput of the server that cleared the bar and was connected to, in MB/s. */
     var acceptedMbps: Double = 0.0,
 
+    /**
+     * Wall clock each stage actually spent, already formatted — "line 8.1s · fetch 7.6s · …".
+     *
+     * Every latency decision about this pipeline has so far been argued from the cost model
+     * in `estimateSeconds`, which exists to drive a countdown and was never meant to be
+     * evidence. This is the clock, and it is carried into the result so a screenshot from a
+     * censored network says where the time went rather than only that it was slow.
+     */
+    var timings: String = "",
+
     var message: String = "",
 )
 
@@ -159,29 +181,32 @@ data class AutoModeRunResult(
  * Reported as an enum rather than parsed out of the progress text, so the timeline on the
  * dashboard cannot drift out of step with the engine when a message is reworded.
  */
-enum class AutoModeStage {
-    /** Measuring what this connection does on its own. */
-    MEASURING,
+enum class AutoModeStage(
+    /** Short name used in the timing line at the end of a run. */
+    val label: String,
+) {
+    /** Establishing what this connection does on its own. */
+    MEASURING("line"),
 
     /** Deciding whether the sources are reachable, and finding a proxy if not. */
-    ROUTING,
+    ROUTING("route"),
 
     /** Downloading the catalog and the source lists. */
-    FETCHING,
+    FETCHING("fetch"),
 
     /** Turning the downloads into candidate servers. */
-    IMPORTING,
+    IMPORTING("import"),
 
     /** Dropping endpoints that answer nothing. */
-    PROBING,
+    PROBING("probe"),
 
     /** Proving which candidates actually carry a request through the tunnel. */
-    TUNNELING,
+    TUNNELING("tunnel"),
 
     /** Measuring throughput, one server at a time. */
-    MEASURING_SERVERS,
+    MEASURING_SERVERS("speed"),
 
-    DONE,
+    DONE("done"),
 }
 
 /**

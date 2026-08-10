@@ -49,6 +49,9 @@ object AutoModeNetwork {
     /** Below this a file is simply downloaded; above it, sampled by byte range. */
     private const val FULL_DOWNLOAD_LIMIT = 3L * 1024 * 1024
 
+    /** How long a remembered rung is believed before the ladder is walked from the top again. */
+    private const val ROUTE_MEMO_TTL_MILLIS = 6L * 60 * 60 * 1000
+
     /** Random windows taken from a large file, and how much each one reads. */
     private const val SAMPLE_WINDOWS = 6
     private const val SAMPLE_WINDOW_BYTES = 256 * 1024
@@ -73,26 +76,78 @@ object AutoModeNetwork {
         )
     }
 
-    /** Every way to ask for [url], best first. */
-    private fun routes(url: String): List<String> = listOf(url) + mirrorsFor(url)
+    /**
+     * Every way to ask for [url], best first, with the rung that worked last time moved to
+     * the front.
+     *
+     * @param preferred index of the rung to try first, as remembered in
+     *        [AutoModeStore.lastRouteIndex]. Out-of-range values are ignored rather than
+     *        rejected, so a stored index that no longer names anything is harmless.
+     */
+    fun routes(url: String, preferred: Int = 0): List<String> {
+        val all = listOf(url) + mirrorsFor(url)
+        if (preferred <= 0 || preferred >= all.size) {
+            return all
+        }
+        // Moved to the front rather than sorted: the rest keep their order, which is the
+        // order they are worth trying in when the remembered one has since been blocked too.
+        return listOf(all[preferred]) + all.filterIndexed { index, _ -> index != preferred }
+    }
+
+    /** The rung to start from, honoured only while it is still recent enough to believe. */
+    private fun preferredRoute(): Int {
+        val store = AutoModeSourceManager.getStore()
+        if (System.currentTimeMillis() - store.lastRouteMillis > ROUTE_MEMO_TTL_MILLIS) {
+            return 0
+        }
+        return store.lastRouteIndex
+    }
 
     /**
-     * Fetches [url] whole, trying each route directly and then, if [proxy] is given,
-     * each route again through it.
+     * Records which rung answered, so later fetches — and later runs — start there.
+     *
+     * Only worth storing when it is not the obvious one: an open network wins on rung zero
+     * every time and would otherwise write to the store on every fetch.
      */
-    fun fetchText(url: String, proxy: AutoModeProxy? = null): String? {
-        for (route in routes(url)) {
-            ProxiedFetch.get(route)?.takeIf { it.isSuccess }?.let {
-                LogUtil.i(AppConfig.TAG, "AutoMode: fetched $route directly")
-                return it.text()
-            }
+    private fun rememberRoute(url: String, winner: String) {
+        val index = (listOf(url) + mirrorsFor(url)).indexOf(winner)
+        if (index < 0) {
+            return
         }
+        val store = AutoModeSourceManager.getStore()
+        if (store.lastRouteIndex == index && System.currentTimeMillis() - store.lastRouteMillis < ROUTE_MEMO_TTL_MILLIS) {
+            return
+        }
+        store.lastRouteIndex = index
+        store.lastRouteMillis = System.currentTimeMillis()
+        AutoModeSourceManager.save()
+    }
+
+    /**
+     * Fetches [url] whole, racing the routes directly and then, if [proxy] is given,
+     * racing them again through it.
+     *
+     * Direct and proxied are two rounds rather than one race because they are not
+     * equivalent outcomes: a direct hit costs nothing to keep using, while a proxied one
+     * routes every later byte through a stranger's machine. Racing them together would
+     * sometimes pick the proxy on a network where the direct route works perfectly well.
+     */
+    suspend fun fetchText(url: String, proxy: AutoModeProxy? = null): String? {
+        RouteRace.first(routes(url, preferredRoute())) { route ->
+            ProxiedFetch.get(route)?.takeIf { it.isSuccess }?.let { route to it }
+        }?.let { (route, response) ->
+            LogUtil.i(AppConfig.TAG, "AutoMode: fetched $route directly")
+            rememberRoute(url, route)
+            return response.text()
+        }
+
         if (proxy != null) {
-            for (route in routes(url)) {
-                ProxiedFetch.get(route, proxy)?.takeIf { it.isSuccess }?.let {
-                    LogUtil.i(AppConfig.TAG, "AutoMode: fetched $route via ${proxy.display}")
-                    return it.text()
-                }
+            RouteRace.first(routes(url, preferredRoute())) { route ->
+                ProxiedFetch.get(route, proxy)?.takeIf { it.isSuccess }?.let { route to it }
+            }?.let { (route, response) ->
+                LogUtil.i(AppConfig.TAG, "AutoMode: fetched $route via ${proxy.display}")
+                rememberRoute(url, route)
+                return response.text()
             }
         }
         return null
@@ -106,7 +161,7 @@ object AutoModeNetwork {
      * run on a blocked network possible at all. It goes stale between releases, so it is
      * merged behind whatever the network produced rather than replacing it.
      */
-    fun fetchProxyList(context: Context, onProgress: (String) -> Unit = {}): List<AutoModeProxy> {
+    suspend fun fetchProxyList(context: Context, onProgress: (String) -> Unit = {}): List<AutoModeProxy> {
         val url = AutoModeSourceManager.getStore().proxiesUrl.ifBlank { DEFAULT_PROXIES_URL }
 
         onProgress("Fetching the proxy list…")
@@ -132,8 +187,13 @@ object AutoModeNetwork {
      * HEAD, because some CDNs answer HEAD from a cache that does not prove the body is
      * reachable — and because the answer doubles as the size probe.
      */
-    fun reachableDirectly(url: String): Boolean =
-        routes(url).any { ProxiedFetch.get(it, null, 0L to 0L)?.isSuccess == true }
+    suspend fun reachableDirectly(url: String): Boolean {
+        val winner = RouteRace.first(routes(url, preferredRoute())) { route ->
+            route.takeIf { ProxiedFetch.get(route, null, 0L to 0L)?.isSuccess == true }
+        } ?: return false
+        rememberRoute(url, winner)
+        return true
+    }
 
     private fun readAsset(context: Context, name: String): String? = try {
         context.assets.open(name).bufferedReader().use { it.readText() }
@@ -148,48 +208,65 @@ object AutoModeNetwork {
      * @param proxy route to use once the direct one has been shown not to work.
      * @return the text, or null when no route produced anything.
      */
-    fun fetchSampled(url: String, proxy: AutoModeProxy? = null): String? {
+    suspend fun fetchSampled(url: String, proxy: AutoModeProxy? = null): String? {
         val route = workingRoute(url, proxy) ?: return null
-        val size = probeSize(route.first, route.second)
+        // The size comes out of the probe that found the route. It was always in that
+        // response — the old code discarded it and sent an identical request to read the
+        // same header back, one wasted round trip per source per run.
+        val size = sizeOf(route.probe)
 
         if (size == null || size <= FULL_DOWNLOAD_LIMIT) {
-            return ProxiedFetch.get(route.first, route.second)?.takeIf { it.isSuccess }?.text()
+            return ProxiedFetch.get(route.url, route.proxy)?.takeIf { it.isSuccess }?.text()
         }
 
         LogUtil.i(AppConfig.TAG, "AutoMode: $url is $size bytes, sampling $SAMPLE_WINDOWS windows")
-        return sampleWindows(route.first, route.second, size)
+        return sampleWindows(route.url, route.proxy, size)
     }
 
-    /** The first route that answers, paired with the proxy it needed (possibly none). */
-    private fun workingRoute(url: String, proxy: AutoModeProxy?): Pair<String, AutoModeProxy?>? {
-        for (candidate in routes(url)) {
-            if (ProxiedFetch.get(candidate, null, 0L to 0L)?.isSuccess == true) {
-                return candidate to null
-            }
+    /** A route that answered, the proxy it needed (possibly none), and the probe that proved it. */
+    private data class Route(
+        val url: String,
+        val proxy: AutoModeProxy?,
+        val probe: ProxiedFetch.Response,
+    )
+
+    /** The first route that answers, raced rather than walked. */
+    private suspend fun workingRoute(url: String, proxy: AutoModeProxy?): Route? {
+        RouteRace.first(routes(url, preferredRoute())) { candidate ->
+            ProxiedFetch.get(candidate, null, 0L to 0L)
+                ?.takeIf { it.isSuccess }
+                ?.let { Route(candidate, null, it) }
+        }?.let {
+            rememberRoute(url, it.url)
+            return it
         }
+
         if (proxy != null) {
-            for (candidate in routes(url)) {
-                if (ProxiedFetch.get(candidate, proxy, 0L to 0L)?.isSuccess == true) {
-                    return candidate to proxy
-                }
+            RouteRace.first(routes(url, preferredRoute())) { candidate ->
+                ProxiedFetch.get(candidate, proxy, 0L to 0L)
+                    ?.takeIf { it.isSuccess }
+                    ?.let { Route(candidate, proxy, it) }
+            }?.let {
+                rememberRoute(url, it.url)
+                return it
             }
         }
         return null
     }
 
     /**
-     * Total size from a one-byte range request, read out of `Content-Range: bytes 0-0/N`.
+     * Total size read out of a range response's `Content-Range: bytes 0-0/N`.
      *
      * Null when the server ignored the range, which is also the signal that windowed
      * sampling is not available and the file has to be taken whole.
      */
-    fun probeSize(url: String, proxy: AutoModeProxy?): Long? {
-        val response = ProxiedFetch.get(url, proxy, 0L to 0L) ?: return null
+    fun sizeOf(response: ProxiedFetch.Response): Long? {
         if (response.code != 206) {
             return null
         }
         return parseContentRangeTotal(response.headers["content-range"])
     }
+
 
     /** `bytes 0-0/123456` → 123456. */
     fun parseContentRangeTotal(header: String?): Long? {
