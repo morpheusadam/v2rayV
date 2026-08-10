@@ -121,15 +121,12 @@ object RootProxyManager {
         val lanShare = forceLanShare || MmkvManager.decodeSettingsBool(AppConfig.PREF_ROOT_LAN_SHARING)
         val corePid = Process.myPid()
 
-        // Per-app proxy/bypass (mirrors what VpnService does via allowed/disallowed apps).
-        val perAppEnabled = MmkvManager.decodeSettingsBool(AppConfig.PREF_PER_APP_PROXY)
-        val bypassApps = MmkvManager.decodeSettingsBool(AppConfig.PREF_BYPASS_APPS)
-        val selectedUids = if (perAppEnabled) {
-            val pkgs = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PER_APP_PROXY_SET)?.toList().orEmpty()
-            if (pkgs.isNotEmpty()) PackageUidResolver.packageNamesToUids(context, pkgs) else emptyList()
-        } else {
-            emptyList()
-        }
+        // Split tunnelling is gone, here as in the VpnService path: everything is routed.
+        // These stay as constants rather than being threaded out of the script builders,
+        // because "not enabled, nothing selected" is already exactly "mark every app".
+        val perAppEnabled = false
+        val bypassApps = false
+        val selectedUids = emptyList<String>()
 
         return buildString {
             appendLine("set -e")

@@ -254,47 +254,26 @@ class CoreVpnService : VpnService(), ServiceControl {
     }
 
     /**
-     * Configures per-app proxy rules for the VPN builder.
+     * Routes the whole device through the tunnel, with one exception: this app.
      *
-     * - If per-app proxy is not enabled, disallow the VPN service's own package.
-     * - If no apps are selected, disallow the VPN service's own package.
-     * - If bypass mode is enabled, disallow all selected apps (including self).
-     * - If proxy mode is enabled, only allow the selected apps (excluding self).
+     * Split tunnelling was removed deliberately. Choosing which apps to route is a
+     * decision most users get wrong in the direction that hurts — the app left out is the
+     * one that leaks — and offering the picker cost a `QUERY_ALL_PACKAGES` declaration,
+     * which is exactly the kind of sensitive permission Play Protect scans sideloaded APKs
+     * for. Everything goes through the tunnel now.
+     *
+     * Excluding this app itself is not a choice but a requirement. Its own sockets are how
+     * the tunnel reaches the server, and routing those back into the tunnel would be a
+     * loop. It also happens to be what lets Auto Mode measure the user's real line speed
+     * while connected, which the acceptance threshold depends on.
      *
      * @param builder The VPN Builder to configure.
      */
     private fun configurePerAppProxy(builder: Builder) {
-        val selfPackageName = BuildConfig.APPLICATION_ID
-
-        // If per-app proxy is not enabled, disallow the VPN service's own package and return
-        if (MmkvManager.decodeSettingsBool(AppConfig.PREF_PER_APP_PROXY) == false) {
-            builder.addDisallowedApplication(selfPackageName)
-            return
-        }
-
-        // If no apps are selected, disallow the VPN service's own package and return
-        val apps = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PER_APP_PROXY_SET)
-        if (apps.isNullOrEmpty()) {
-            builder.addDisallowedApplication(selfPackageName)
-            return
-        }
-
-        val bypassApps = MmkvManager.decodeSettingsBool(AppConfig.PREF_BYPASS_APPS)
-        // Handle the VPN service's own package according to the mode
-        if (bypassApps) apps.add(selfPackageName) else apps.remove(selfPackageName)
-
-        apps.forEach {
-            try {
-                if (bypassApps) {
-                    // In bypass mode, disallow the selected apps
-                    builder.addDisallowedApplication(it)
-                } else {
-                    // In proxy mode, only allow the selected apps
-                    builder.addAllowedApplication(it)
-                }
-            } catch (e: PackageManager.NameNotFoundException) {
-                LogUtil.e(AppConfig.TAG, "StartCore-VPN: Failed to configure app", e)
-            }
+        try {
+            builder.addDisallowedApplication(BuildConfig.APPLICATION_ID)
+        } catch (e: PackageManager.NameNotFoundException) {
+            LogUtil.e(AppConfig.TAG, "StartCore-VPN: Failed to exclude self from the tunnel", e)
         }
     }
 

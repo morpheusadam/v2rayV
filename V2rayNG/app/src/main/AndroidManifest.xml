@@ -23,10 +23,12 @@
         android:name="android.hardware.touchscreen"
         android:required="false" />
 
-    <!-- https://developer.android.com/about/versions/11/privacy/package-visibility -->
-    <uses-permission
-        android:name="android.permission.QUERY_ALL_PACKAGES"
-        tools:ignore="PackageVisibilityPolicy,QueryAllPackagesPermission" />
+    <!--
+      QUERY_ALL_PACKAGES used to be declared here, for the per-app proxy picker's list of
+      installed apps. Both are gone: the whole device goes through the tunnel now, and the
+      permission was the one item on this app's manifest that Play Protect's install-time
+      scan of sideloaded APKs looks for.
+    -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
@@ -125,9 +127,6 @@
             android:windowSoftInputMode="stateUnchanged|adjustResize" />
         <activity
             android:name=".ui.settings.SettingsActivity"
-            android:exported="false" />
-        <activity
-            android:name=".ui.perappproxy.PerAppProxyActivity"
             android:exported="false" />
         <activity
             android:name=".ui.apppicker.AppPickerActivity"
