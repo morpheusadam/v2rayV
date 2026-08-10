@@ -578,6 +578,15 @@
     <string name="dashboard_uploaded">Uploaded</string>
     <string name="dashboard_testing">Testing</string>
     <string name="notice_dismiss">Dismiss</string>
+    <string name="dashboard_connecting_in">Connecting in</string>
+    <string name="stage_measuring">Measuring your line</string>
+    <string name="stage_routing">Finding a route</string>
+    <string name="stage_fetching">Fetching sources</string>
+    <string name="stage_importing">Reading servers</string>
+    <string name="stage_probing">Checking which answer</string>
+    <string name="stage_tunneling">Testing tunnels</string>
+    <string name="stage_measuring_servers">Measuring speed</string>
+    <string name="stage_done">Done</string>
     <string name="dashboard_line_speed">Your line</string>
     <string name="dashboard_vpn_speed">Through VPN</string>
     <string name="dashboard_automode_running">Auto Mode %1$s</string>

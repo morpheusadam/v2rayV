@@ -15,6 +15,8 @@ data class AutoModeProgressMessage(
     val running: Boolean,
     val message: String,
     val remainingMillis: Long,
+    /** [com.v2ray.ang.automode.AutoModeStage] by name, for the timeline on the dashboard. */
+    val stage: String = "",
 ) : Serializable
 
 /**

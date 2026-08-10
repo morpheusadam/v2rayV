@@ -44,6 +44,8 @@ fun DashboardScreen(
     autoModeRunning: Boolean,
     autoModeMessage: String,
     autoModeRemaining: String,
+    autoModeRemainingMillis: Long,
+    autoModeStage: com.v2ray.ang.automode.AutoModeStage,
     onTogglePower: () -> Unit,
     onToggleAutoMode: () -> Unit,
     onAutoModeSettings: () -> Unit,
@@ -177,12 +179,22 @@ fun DashboardScreen(
                 onOpenServers = onOpenServers,
             )
 
-            // Draws nothing at all when there is nothing to say, which is nearly always.
-            NoticeCard(
-                notice = state.notice,
-                onAction = onNoticeAction,
-                onDismiss = onNoticeDismiss,
-            )
+            // One slot, two tenants. While a run is finding a server the space belongs to
+            // the countdown — that is the moment the user is actually waiting on something
+            // and wants to know how long. The rest of the time it is the notice, which is
+            // nearly always nothing at all.
+            if (autoModeRunning) {
+                ConnectingCard(
+                    stage = autoModeStage,
+                    remainingMillis = autoModeRemainingMillis,
+                )
+            } else {
+                NoticeCard(
+                    notice = state.notice,
+                    onAction = onNoticeAction,
+                    onDismiss = onNoticeDismiss,
+                )
+            }
 
             Spacer(Modifier.navigationBarsPadding())
         }

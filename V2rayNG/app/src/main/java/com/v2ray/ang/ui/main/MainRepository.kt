@@ -86,7 +86,9 @@ class MainRepository(
                         AutoModeProgressMessage::class.java
                     )
                     progress?.let {
-                        MainServiceEvent.AutoModeProgress(it.running, it.message, it.remainingMillis)
+                        MainServiceEvent.AutoModeProgress(
+                            it.running, it.message, it.remainingMillis, it.stage
+                        )
                     }
                 }
 

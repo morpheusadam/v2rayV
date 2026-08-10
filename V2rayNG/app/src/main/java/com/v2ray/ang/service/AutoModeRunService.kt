@@ -10,6 +10,7 @@ import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
 import com.v2ray.ang.automode.AutoModeEngine
 import com.v2ray.ang.automode.AutoModeScheduler
+import com.v2ray.ang.automode.AutoModeStage
 import com.v2ray.ang.core.CoreNativeManager
 import com.v2ray.ang.core.CoreServiceManager
 import com.v2ray.ang.dto.AutoModeMessage
@@ -53,6 +54,9 @@ class AutoModeRunService : Service() {
 
     @Volatile
     private var lastRemainingMillis: Long = 0
+
+    @Volatile
+    private var lastStage: AutoModeStage = AutoModeStage.MEASURING
 
     private val cancelAction by lazy {
         val intent = Intent(this, AutoModeRunService::class.java)
@@ -162,6 +166,10 @@ class AutoModeRunService : Service() {
                 lastRemainingMillis = remaining
                 publishProgress(true, lastMessage, remaining)
             },
+            onStage = { stage ->
+                lastStage = stage
+                publishProgress(true, lastMessage, lastRemainingMillis)
+            },
             onSpeedSample = { mbps, baseline ->
                 MessageHelper.sendMsg2UI(
                     this,
@@ -209,7 +217,9 @@ class AutoModeRunService : Service() {
         MessageHelper.sendMsg2UI(
             this,
             AppConfig.MSG_AUTOMODE_PROGRESS,
-            JsonUtil.toJson(AutoModeProgressMessage(running, message, remainingMillis))
+            JsonUtil.toJson(
+                AutoModeProgressMessage(running, message, remainingMillis, lastStage.name)
+            )
         )
     }
 

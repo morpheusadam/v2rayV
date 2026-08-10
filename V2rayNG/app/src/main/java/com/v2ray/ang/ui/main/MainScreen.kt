@@ -80,6 +80,8 @@ fun MainScreen(
                     autoModeRunning = uiState.autoMode.running,
                     autoModeMessage = uiState.autoMode.message,
                     autoModeRemaining = formatRemaining(uiState.autoMode.remainingMillis),
+                    autoModeRemainingMillis = uiState.autoMode.remainingMillis,
+                    autoModeStage = uiState.autoMode.stage,
                     onTogglePower = { onAction(MainAction.ToggleService) },
                     onToggleAutoMode = { onAction(MainAction.ToggleAutoMode) },
                     onAutoModeSettings = { onNavigate(MainDestination.AutoMode) },

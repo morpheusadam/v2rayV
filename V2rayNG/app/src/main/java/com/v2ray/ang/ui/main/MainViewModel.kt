@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
 import com.v2ray.ang.automode.AutoModeProgress
+import com.v2ray.ang.automode.AutoModeStage
 import com.v2ray.ang.automode.CountryHint
 import com.v2ray.ang.notice.NoticeInstaller
 import com.v2ray.ang.notice.NoticeManager
@@ -168,6 +169,8 @@ class MainViewModel(
                             running = event.running,
                             message = event.message,
                             remainingMillis = event.remainingMillis,
+                            stage = runCatching { AutoModeStage.valueOf(event.stage) }
+                                .getOrDefault(AutoModeStage.MEASURING),
                         ),
                         // The live meter belongs to a run; when the run ends it has nothing
                         // to show and must not be left holding the last sample.

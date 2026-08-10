@@ -148,6 +148,37 @@ data class AutoModeRunResult(
 )
 
 /**
+ * The stages of a run, in the order they happen.
+ *
+ * Reported as an enum rather than parsed out of the progress text, so the timeline on the
+ * dashboard cannot drift out of step with the engine when a message is reworded.
+ */
+enum class AutoModeStage {
+    /** Measuring what this connection does on its own. */
+    MEASURING,
+
+    /** Deciding whether the sources are reachable, and finding a proxy if not. */
+    ROUTING,
+
+    /** Downloading the catalog and the source lists. */
+    FETCHING,
+
+    /** Turning the downloads into candidate servers. */
+    IMPORTING,
+
+    /** Dropping endpoints that answer nothing. */
+    PROBING,
+
+    /** Proving which candidates actually carry a request through the tunnel. */
+    TUNNELING,
+
+    /** Measuring throughput, one server at a time. */
+    MEASURING_SERVERS,
+
+    DONE,
+}
+
+/**
  * What the button shows while a run is in flight. [remainingMillis] is projected from the
  * stage that is actually running rather than from a fixed guess, so it corrects itself on
  * a slow network instead of counting down to zero and sitting there.
@@ -156,6 +187,7 @@ data class AutoModeProgress(
     val running: Boolean = false,
     val message: String = "",
     val remainingMillis: Long = 0,
+    val stage: AutoModeStage = AutoModeStage.MEASURING,
 )
 
 /** One measured server, carried from the speed-test stage into winner selection. */

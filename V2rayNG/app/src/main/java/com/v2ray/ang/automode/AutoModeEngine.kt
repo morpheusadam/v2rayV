@@ -53,6 +53,8 @@ class AutoModeEngine(
     private val context: Context,
     private val onProgress: (String) -> Unit = {},
     private val onEstimate: (Long) -> Unit = {},
+    /** Which stage the run has reached, for the timeline on the dashboard. */
+    private val onStage: (AutoModeStage) -> Unit = {},
     /**
      * Fired the moment a server is measured at or above the acceptance threshold, before
      * the run has finished. The caller connects on this rather than waiting for the full
@@ -154,6 +156,7 @@ class AutoModeEngine(
             // ---- what is this connection capable of --------------------------------
             // Measured first because everything after it is a ratio against this number,
             // including the point at which the run stops looking and connects.
+            onStage(AutoModeStage.MEASURING)
             baselineMbps = AutoModeBaseline.get(
                 context,
                 onProgress = ::report,
@@ -165,9 +168,11 @@ class AutoModeEngine(
             if (isStopped()) return@withContext cancelled(result)
 
             // ---- find a way out, if the direct one is blocked ----------------------
+            onStage(AutoModeStage.ROUTING)
             proxy = resolveRoute(store)
 
             // ---- top up the source list from the catalog ---------------------------
+            onStage(AutoModeStage.FETCHING)
             refreshCatalog(store, proxy)
             if (store.sources.none { it.enabled }) {
                 result.message = "No usable subscription sources could be reached."
@@ -192,6 +197,7 @@ class AutoModeEngine(
             if (isStopped()) return@withContext cancelled(result)
 
             // ---- import candidates -------------------------------------------------
+            onStage(AutoModeStage.IMPORTING)
             poolBySource = importCandidates(sources, fetched)
 
             // The downloaded bodies are megabytes each and nothing after this point reads
@@ -224,6 +230,7 @@ class AutoModeEngine(
                     + (MAX_SPEED_TEST * SPEED_TEST_SECONDS)
             )
 
+            onStage(AutoModeStage.PROBING)
             val live = tcpingStage(candidates)
             result.tcpAlive = live.size
             report("${live.size} of ${min(candidates.size, MAX_TCPING)} endpoints answered.")
@@ -236,6 +243,7 @@ class AutoModeEngine(
             if (isStopped()) return@withContext cancelled(result)
 
             // ---- real ping: the stage that actually proves a proxy works ------------
+            onStage(AutoModeStage.TUNNELING)
             val target = max(store.topCount * 2, 12)
             val working = realPingStage(live, target, realPingTested)
             workingIds = working.map { it.guid }.toSet()
@@ -257,6 +265,7 @@ class AutoModeEngine(
             if (isStopped()) return@withContext cancelled(result)
 
             // ---- speed test --------------------------------------------------------
+            onStage(AutoModeStage.MEASURING_SERVERS)
             val measurements = speedTestStage(speedInput, acceptThreshold)
             result.speedTested = measurements.size
             result.acceptedMbps = measurements.firstOrNull { isAcceptable(it, acceptThreshold) }?.speedMbps ?: 0.0
