@@ -1,8 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="logo_violet">#8B6BFF</color>
-    <color name="logo_indigo">#6A4BF5</color>
-    <color name="logo_teal">#35D9A8</color>
-    <color name="logo_green">#2EE59D</color>
-    <color name="logo_ink">#221B47</color>
+    <color name="logo_blue_lit">#4C8AC9</color>
+    <color name="logo_blue">#2A62A8</color>
+    <color name="logo_blue_mid">#123E7E</color>
+    <color name="logo_blue_deep">#08275F</color>
+    <color name="logo_ink">#041D50</color>
+    <color name="logo_silver">#F4F6FA</color>
+    <color name="logo_silver_mid">#DCE2EC</color>
+    <color name="logo_silver_low">#B3BFD3</color>
+    <color name="logo_steel">#8494AE</color>
 </resources>

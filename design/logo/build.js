@@ -2,289 +2,428 @@ const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 
-const OUT = 'C:/Users/morph/Projects/V2ray/v2rayNG/design/logo';
+const OUT = path.resolve(__dirname);
 
 // ---------------------------------------------------------------- palette
+// Sampled from the source artwork: a navy mark on brushed silver.
 const C = {
-  violet: '#8B6BFF',
-  indigo: '#6A4BF5',
-  teal:   '#35D9A8',
-  green:  '#2EE59D',
-  ink:    '#221B47',
+  blueLit:  '#4C8AC9',
+  blue:     '#2A62A8',
+  blueMid:  '#123E7E',
+  blueDeep: '#08275F',
+  ink:      '#041D50',
+  silver:   '#F4F6FA',
+  silverMid:'#DCE2EC',
+  silverLow:'#B3BFD3',
+  steel:    '#8494AE',
 };
 
 // ---------------------------------------------------------------- geometry
-// Canonical hand is drawn in a 1024x1024 space; bbox below includes the
-// outline pass (stroke-width 34 -> 17px bleed on every side).
-const rr = (x, y, w, h, r) =>
-  `M ${x + r},${y} H ${x + w - r} A ${r},${r} 0 0 1 ${x + w},${y + r} ` +
-  `V ${y + h - r} A ${r},${r} 0 0 1 ${x + w - r},${y + h} ` +
-  `H ${x + r} A ${r},${r} 0 0 1 ${x},${y + h - r} ` +
-  `V ${y + r} A ${r},${r} 0 0 1 ${x + r},${y} Z`;
+// The mark is a straight-edged fox/wolf head that also reads as an "M".
+// Vertices were traced from the source render and fitted back to it
+// (IoU 0.95); everything is mirrored around the axis below, so the shape is
+// exactly symmetric. Outer ring is wound clockwise and every hole
+// counter-clockwise, which makes the default non-zero fill rule punch the
+// holes out — no `evenOdd` needed, so the path works in any renderer.
+const AX = 511.5;
+const mx = (x) => 2 * AX - x;
+const mirror = (p) => p.map(([x, y]) => [mx(x), y]).reverse();
 
-const P = {
-  palm:   rr(305, 480, 340, 330, 165),
-  ring:   rr(572, 452, 108, 200, 54),
-  pinky:  rr(652, 496, 100, 172, 50),
-  index:  'M 332,222 L 450,566',
-  middle: 'M 612,196 L 522,566',
-  thumb:  'M 356,676 L 520,706',
-  crease: 'M 372,644 C 448,592 548,608 568,692',
-};
-const ROT = { ring: [8, 626, 552], pinky: [14, 702, 582] };
+const OUTER = [[310, 219], [AX, 436], [713, 219], [713, 463],
+               [782, 563], [AX, 802], [241, 563], [310, 463]];
+const H_TOP  = [[368, 317], [AX, 634], [655, 317], [AX, 469]];
+const H_SIDE = [[334, 303], [334, 468], [266, 560], [440, 714], [337, 558], [407, 461]];
+const H_EYE  = [[418, 484], [364, 558], [486, 631]];
+const H_BOT  = [[391, 600], [AX, 779], [632, 600], [AX, 669]];
+const HOLES  = [H_TOP, H_SIDE, mirror(H_SIDE), H_EYE, mirror(H_EYE), H_BOT];
 
-const FINGER_W = 118;   // index / middle
-const THUMB_W  = 128;
-const RIM      = 34;    // dark outline thickness (total)
-const DETAIL   = 18;    // internal crease thickness
+const ART = { x: 241, y: 219, w: 541, h: 583 };   // bbox of OUTER
 
-const BBOX = { x: 256, y: 120, w: 521, h: 707 };
+const isCW = (p) =>
+  p.reduce((s, [x, y], i) => {
+    const [x2, y2] = p[(i + 1) % p.length];
+    return s + (x2 - x) * (y2 + y);
+  }, 0) > 0;
+const wind = (p, cw) => (isCW(p) === cw ? p : [...p].reverse());
 
-// place the hand inside `size`, occupying `frac` of the height
-const fit = (size, frac) => {
-  const s = (size * frac) / BBOX.h;
-  const tx = size / 2 - (BBOX.x + BBOX.w / 2) * s;
-  const ty = size / 2 - (BBOX.y + BBOX.h / 2) * s;
-  return `translate(${tx.toFixed(2)},${ty.toFixed(2)}) scale(${s.toFixed(5)})`;
-};
+// mark scaled to height `h`, centred on (cx, cy)
+function markPath(cx, cy, h, prec = 2) {
+  const s = h / ART.h;
+  const ox = ART.x + ART.w / 2;
+  const oy = ART.y + ART.h / 2;
+  const sub = (p) =>
+    'M' + p.map(([x, y]) =>
+      `${(cx + (x - ox) * s).toFixed(prec)},${(cy + (y - oy) * s).toFixed(prec)}`
+    ).join('L') + 'Z';
+  return [wind(OUTER, true), ...HOLES.map((p) => wind(p, false))].map(sub).join(' ');
+}
+const markW = (h) => (h * ART.w) / ART.h;
 
-// ---------------------------------------------------------------- hand
-// Three passes: dark outline (union of solid shapes, no seams), gradient
-// fill (userSpaceOnUse gradient so overlaps blend), then detail lines.
-function hand({ grad = 'url(#handGrad)', mono = null } = {}) {
-  const g = (a) => `transform="rotate(${ROT[a][0]} ${ROT[a][1]} ${ROT[a][2]})"`;
-  const silhouette = (attrs, extra = 0) => `
-    <path d="${P.palm}" ${attrs} stroke-width="${extra}"/>
-    <path d="${P.thumb}" ${attrs} stroke-width="${THUMB_W + extra}"/>
-    <path d="${P.ring}" ${g('ring')} ${attrs} stroke-width="${extra}"/>
-    <path d="${P.pinky}" ${g('pinky')} ${attrs} stroke-width="${extra}"/>
-    <path d="${P.index}" ${attrs} stroke-width="${FINGER_W + extra}"/>
-    <path d="${P.middle}" ${attrs} stroke-width="${FINGER_W + extra}"/>`;
-
-  if (mono) {
-    return `<g fill="${mono}" stroke="${mono}" stroke-linecap="round" stroke-linejoin="round">
-      ${silhouette(`fill="${mono}" stroke="${mono}"`, 0)}
-    </g>`;
+// squircle (superellipse) — the card silhouette
+function squircle(cx, cy, r, n = 4.3, steps = 192) {
+  const pts = [];
+  for (let i = 0; i < steps; i++) {
+    const t = (2 * Math.PI * i) / steps;
+    const ct = Math.cos(t), st = Math.sin(t);
+    pts.push([
+      cx + Math.sign(ct) * Math.pow(Math.abs(ct), 2 / n) * r,
+      cy + Math.sign(st) * Math.pow(Math.abs(st), 2 / n) * r,
+    ]);
   }
+  return 'M' + pts.map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join('L') + 'Z';
+}
 
-  return `<g stroke-linecap="round" stroke-linejoin="round">
-    <g fill="${C.ink}" stroke="${C.ink}">
-      ${silhouette(`fill="${C.ink}" stroke="${C.ink}"`, RIM)}
-    </g>
-    <g fill="${grad}" stroke="${grad}">
-      ${silhouette(`fill="${grad}" stroke="${grad}"`, 0)}
-    </g>
-    <g fill="none" stroke="${C.ink}" stroke-width="${DETAIL}">
-      <path d="${P.ring}" ${g('ring')}/>
-      <path d="${P.pinky}" ${g('pinky')}/>
-      <path d="${P.crease}"/>
-    </g>
+function circle(cx, cy, r, steps = 192) {
+  const pts = [];
+  for (let i = 0; i < steps; i++) {
+    const t = (2 * Math.PI * i) / steps;
+    pts.push([cx + Math.cos(t) * r, cy + Math.sin(t) * r]);
+  }
+  return 'M' + pts.map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join('L') + 'Z';
+}
+
+// ---------------------------------------------------------------- glass card
+// Frosted pane: body tint, top-left sheen, cool tint pooling bottom-right,
+// a lit rim and a thin inner edge. Nothing here is opaque, so the card keeps
+// reading as glass over whatever is behind it.
+function cardDefs(id, shape, b) {
+  const { x, y, w, h } = b;
+  return `
+  <linearGradient id="${id}Body" gradientUnits="userSpaceOnUse"
+                  x1="${x + w * 0.12}" y1="${y}" x2="${x + w * 0.88}" y2="${y + h}">
+    <stop offset="0"    stop-color="#FFFFFF" stop-opacity="0.90"/>
+    <stop offset="0.34" stop-color="#EEF2F8" stop-opacity="0.74"/>
+    <stop offset="0.68" stop-color="#C2CFE4" stop-opacity="0.64"/>
+    <stop offset="1"    stop-color="#93A7C7" stop-opacity="0.70"/>
+  </linearGradient>
+  <radialGradient id="${id}Sheen" gradientUnits="userSpaceOnUse"
+                  cx="${x + w * 0.30}" cy="${y + h * 0.18}" r="${w * 0.80}">
+    <stop offset="0"    stop-color="#FFFFFF" stop-opacity="0.62"/>
+    <stop offset="0.42" stop-color="#FFFFFF" stop-opacity="0.16"/>
+    <stop offset="1"    stop-color="#FFFFFF" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="${id}Tint" gradientUnits="userSpaceOnUse"
+                  cx="${x + w * 0.90}" cy="${y + h * 0.94}" r="${w * 0.72}">
+    <stop offset="0"   stop-color="#2C63A8" stop-opacity="0.30"/>
+    <stop offset="1"   stop-color="#2C63A8" stop-opacity="0"/>
+  </radialGradient>
+  <linearGradient id="${id}Sweep" gradientUnits="userSpaceOnUse"
+                  x1="${x}" y1="${y}" x2="${x + w * 0.80}" y2="${y + h * 0.80}">
+    <stop offset="0"    stop-color="#FFFFFF" stop-opacity="0.50"/>
+    <stop offset="0.26" stop-color="#FFFFFF" stop-opacity="0.10"/>
+    <stop offset="0.55" stop-color="#FFFFFF" stop-opacity="0"/>
+  </linearGradient>
+  <linearGradient id="${id}Rim" gradientUnits="userSpaceOnUse"
+                  x1="${x}" y1="${y}" x2="${x + w}" y2="${y + h}">
+    <stop offset="0"    stop-color="#FFFFFF" stop-opacity="0.98"/>
+    <stop offset="0.26" stop-color="#FFFFFF" stop-opacity="0.38"/>
+    <stop offset="0.60" stop-color="#8DA2C2" stop-opacity="0.38"/>
+    <stop offset="1"    stop-color="#FFFFFF" stop-opacity="0.88"/>
+  </linearGradient>
+  <clipPath id="${id}Clip"><path d="${shape}"/></clipPath>`;
+}
+
+function cardBody(id, shape, inner, b) {
+  const rim = b.w * 0.014;
+  return `
+  <path d="${shape}" fill="url(#${id}Body)"/>
+  <g clip-path="url(#${id}Clip)">
+    <path d="${shape}" fill="url(#${id}Sheen)"/>
+    <path d="${shape}" fill="url(#${id}Tint)"/>
+    <path d="${shape}" fill="url(#${id}Sweep)"/>
+    <path d="${shape}" fill="none" stroke="url(#${id}Rim)" stroke-width="${(rim * 2).toFixed(2)}"/>
+  </g>
+  <path d="${inner}" fill="none" stroke="#FFFFFF" stroke-opacity="0.34"
+        stroke-width="${(rim * 0.42).toFixed(2)}"/>`;
+}
+
+// ---------------------------------------------------------------- mark
+// Same three passes as the card: gradient body, gloss over the top half,
+// and a lit inner bevel clipped to the silhouette so the outline stays crisp.
+// `deep` sits on the glass card, which is always light. `lit` is the standalone
+// mark: the same hue lifted so the lower half still reads on a dark surface.
+const TONE = {
+  deep: [C.blueLit, C.blue, C.blueMid, C.blueDeep, C.ink],
+  lit:  ['#6FA9E2', '#3E7CC0', '#235A9E', '#17457F', '#133C72'],
+};
+
+function markDefs(id, cx, cy, h, tone = 'deep') {
+  const w = markW(h);
+  const t = cy - h / 2;
+  const bt = cy + h / 2;
+  const [c0, c1, c2, c3, c4] = TONE[tone];
+  return `
+  <linearGradient id="${id}Fill" gradientUnits="userSpaceOnUse"
+                  x1="${(cx - w * 0.42).toFixed(1)}" y1="${t.toFixed(1)}"
+                  x2="${(cx + w * 0.46).toFixed(1)}" y2="${bt.toFixed(1)}">
+    <stop offset="0"    stop-color="${c0}"/>
+    <stop offset="0.22" stop-color="${c1}"/>
+    <stop offset="0.55" stop-color="${c2}"/>
+    <stop offset="0.82" stop-color="${c3}"/>
+    <stop offset="1"    stop-color="${c4}"/>
+  </linearGradient>
+  <linearGradient id="${id}Gloss" gradientUnits="userSpaceOnUse"
+                  x1="${cx}" y1="${t.toFixed(1)}" x2="${cx}" y2="${(t + h * 0.66).toFixed(1)}">
+    <stop offset="0"    stop-color="#FFFFFF" stop-opacity="0.26"/>
+    <stop offset="0.45" stop-color="#FFFFFF" stop-opacity="0.07"/>
+    <stop offset="1"    stop-color="#FFFFFF" stop-opacity="0"/>
+  </linearGradient>
+  <linearGradient id="${id}Edge" gradientUnits="userSpaceOnUse"
+                  x1="${(cx - w * 0.40).toFixed(1)}" y1="${t.toFixed(1)}"
+                  x2="${(cx + w * 0.40).toFixed(1)}" y2="${bt.toFixed(1)}">
+    <stop offset="0"    stop-color="#DCEAFF" stop-opacity="0.80"/>
+    <stop offset="0.40" stop-color="#FFFFFF" stop-opacity="0.14"/>
+    <stop offset="1"    stop-color="#7FB2FF" stop-opacity="0.34"/>
+  </linearGradient>
+  <clipPath id="${id}Clip"><path d="${markPath(cx, cy, h)}"/></clipPath>
+  <filter id="${id}Drop" x="-25%" y="-25%" width="150%" height="150%">
+    <feGaussianBlur stdDeviation="${(h * 0.017).toFixed(2)}"/>
+  </filter>`;
+}
+
+function markBody(id, cx, cy, h, { shadow = true } = {}) {
+  const d = markPath(cx, cy, h);
+  const drop = shadow
+    ? `<g filter="url(#${id}Drop)" opacity="0.34">
+    <path d="${d}" transform="translate(0,${(h * 0.013).toFixed(2)})" fill="#04173C"/>
+  </g>`
+    : '';
+  return `${drop}
+  <path d="${d}" fill="url(#${id}Fill)"/>
+  <g clip-path="url(#${id}Clip)">
+    <path d="${d}" fill="url(#${id}Gloss)"/>
+    <path d="${d}" fill="none" stroke="url(#${id}Edge)"
+          stroke-width="${(h * 0.0062).toFixed(2)}" stroke-linejoin="round"/>
   </g>`;
 }
 
-const handGrad = (y0, y1) => `
-  <linearGradient id="handGrad" gradientUnits="userSpaceOnUse"
-                  x1="380" y1="${y0}" x2="620" y2="${y1}">
-    <stop offset="0"    stop-color="${C.violet}"/>
-    <stop offset="0.30" stop-color="${C.indigo}"/>
-    <stop offset="0.72" stop-color="${C.teal}"/>
-    <stop offset="1"    stop-color="${C.green}"/>
-  </linearGradient>`;
-
 // ---------------------------------------------------------------- documents
-const svg = (size, body, defs = '') =>
-  `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" ` +
-  `viewBox="0 0 ${size} ${size}">\n<defs>${defs}</defs>\n${body}\n</svg>\n`;
+const CANVAS = 1024;
+const CARD = { cx: 512, cy: 512, r: 424 };
+const CARD_BOX = { x: CARD.cx - CARD.r, y: CARD.cy - CARD.r, w: CARD.r * 2, h: CARD.r * 2 };
+const MARK_ON_CARD = 583;          // same proportion as the source artwork
+const DISC = { cx: 512, cy: 512, r: 500 };
+const DISC_BOX = { x: 12, y: 12, w: 1000, h: 1000 };
 
-// 1. glass card + hand, fully transparent background
-function glass(size = 1024) {
-  const k = size / 1024;
-  const card = rr(88 * k, 88 * k, 848 * k, 848 * k, 208 * k);
-  const inner = rr(98 * k, 98 * k, 828 * k, 828 * k, 198 * k);
-  const defs = `
-    ${handGrad(170, 600)}
-    <linearGradient id="glassFill" x1="0.05" y1="0" x2="0.85" y2="1">
-      <stop offset="0"    stop-color="#FFFFFF" stop-opacity="0.26"/>
-      <stop offset="0.40" stop-color="#FFFFFF" stop-opacity="0.10"/>
-      <stop offset="0.75" stop-color="${C.teal}" stop-opacity="0.10"/>
-      <stop offset="1"    stop-color="${C.indigo}" stop-opacity="0.16"/>
-    </linearGradient>
-    <linearGradient id="sweep" x1="0" y1="0" x2="0.72" y2="1">
-      <stop offset="0"    stop-color="#FFFFFF" stop-opacity="0.30"/>
-      <stop offset="0.22" stop-color="#FFFFFF" stop-opacity="0.12"/>
-      <stop offset="0.52" stop-color="#FFFFFF" stop-opacity="0"/>
-      <stop offset="1"    stop-color="#FFFFFF" stop-opacity="0"/>
-    </linearGradient>
-    <linearGradient id="rimGrad" x1="0.1" y1="0" x2="0.9" y2="1">
-      <stop offset="0"    stop-color="#FFFFFF" stop-opacity="0.92"/>
-      <stop offset="0.30" stop-color="#FFFFFF" stop-opacity="0.28"/>
-      <stop offset="0.62" stop-color="${C.green}" stop-opacity="0.45"/>
-      <stop offset="1"    stop-color="${C.violet}" stop-opacity="0.70"/>
-    </linearGradient>
-    <linearGradient id="innerRim" x1="0.15" y1="0" x2="0.85" y2="1">
-      <stop offset="0"    stop-color="#FFFFFF" stop-opacity="0.55"/>
-      <stop offset="0.35" stop-color="#FFFFFF" stop-opacity="0.05"/>
-      <stop offset="1"    stop-color="#FFFFFF" stop-opacity="0"/>
-    </linearGradient>
-    <clipPath id="cardClip"><path d="${card}"/></clipPath>
-    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="${40 * k}"/>
-    </filter>
-    <filter id="drop" x="-30%" y="-30%" width="160%" height="160%">
-      <feDropShadow dx="0" dy="${10 * k}" stdDeviation="${16 * k}"
-                    flood-color="#050B08" flood-opacity="0.45"/>
-    </filter>`;
+const svg = (px, defs, body) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" width="${px}" height="${px}" ` +
+  `viewBox="0 0 ${CANVAS} ${CANVAS}">\n<defs>${defs}\n</defs>\n${body}\n</svg>\n`;
 
-  const body = `
-  <g>
-    <path d="${card}" fill="url(#glassFill)"/>
-    <g clip-path="url(#cardClip)">
-      <ellipse cx="${512 * k}" cy="${620 * k}" rx="${270 * k}" ry="${230 * k}"
-               fill="${C.green}" opacity="0.28" filter="url(#glow)"/>
-      <ellipse cx="${452 * k}" cy="${300 * k}" rx="${210 * k}" ry="${165 * k}"
-               fill="${C.violet}" opacity="0.24" filter="url(#glow)"/>
-      <rect width="${size}" height="${size}" fill="url(#sweep)"/>
-      <path d="${inner}" fill="none" stroke="url(#innerRim)" stroke-width="${3 * k}"/>
-    </g>
-    <path d="${card}" fill="none" stroke="url(#rimGrad)" stroke-width="${5 * k}"/>
-  </g>
-  <g filter="url(#drop)"><g transform="scale(${k})">
-    <g transform="${fit(1024, 0.46)}">${hand()}</g>
-  </g></g>`;
+const svgBox = (w, h, scale, defs, body) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" width="${w * scale}" height="${h * scale}" ` +
+  `viewBox="0 0 ${w} ${h}">\n<defs>${defs}\n</defs>\n${body}\n</svg>\n`;
 
-  return svg(size, body, defs);
+// 1. the icon: glass card + mark, fully transparent outside the card
+function glass(px = CANVAS) {
+  const shape = squircle(CARD.cx, CARD.cy, CARD.r);
+  const inner = squircle(CARD.cx, CARD.cy, CARD.r - CARD.r * 0.028);
+  return svg(px,
+    cardDefs('c', shape, CARD_BOX) + markDefs('m', 512, 512, MARK_ON_CARD),
+    cardBody('c', shape, inner, CARD_BOX) + markBody('m', 512, 512, MARK_ON_CARD));
 }
 
-// 2. bare mark, transparent
-const mark = (size = 1024, frac = 0.92) =>
-  svg(size, `<g transform="${fit(size, frac)}">${hand()}</g>`, handGrad(170, 600));
+// 2. round variant, for launchers that ask for a circular icon
+function glassRound(px = CANVAS) {
+  const shape = circle(DISC.cx, DISC.cy, DISC.r);
+  const inner = circle(DISC.cx, DISC.cy, DISC.r - DISC.r * 0.028);
+  const h = 620;
+  return svg(px,
+    cardDefs('c', shape, DISC_BOX) + markDefs('m', 512, 512, h),
+    cardBody('c', shape, inner, DISC_BOX) + markBody('m', 512, 512, h));
+}
 
-// 3. monochrome (themed icons / notification / tinting)
-const monoMark = (size = 1024, color = '#FFFFFF', frac = 0.92) =>
-  svg(size, `<g transform="${fit(size, frac)}">${hand({ mono: color })}</g>`);
+// 3. the bare mark — inside the app, where a card would be noise
+function markOnly(px = CANVAS, h = 920, shadow = false) {
+  return svg(px, markDefs('m', 512, 512, h, 'lit'),
+    markBody('m', 512, 512, h, { shadow }));
+}
 
-// 4. adaptive-icon layers (108dp grid, art inside the 66dp safe zone)
-const adaptiveFg = (size = 432) =>
-  svg(size, `<g transform="${fit(size, 0.52)}">${hand()}</g>`, handGrad(170, 600));
+// 4. single colour, for the status bar / themed icon / print
+function mono(px, color, h = 920) {
+  return svg(px, '', `<path d="${markPath(512, 512, h)}" fill="${color}"/>`);
+}
 
-const adaptiveBg = (size = 432) => svg(size, `
-  <rect width="${size}" height="${size}" fill="url(#bg)"/>
-  <ellipse cx="${size * 0.5}" cy="${size * 0.62}" rx="${size * 0.46}" ry="${size * 0.4}"
-           fill="${C.green}" opacity="0.16"/>
-  <ellipse cx="${size * 0.36}" cy="${size * 0.3}" rx="${size * 0.4}" ry="${size * 0.33}"
-           fill="${C.indigo}" opacity="0.18"/>`, `
-  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-    <stop offset="0" stop-color="#1C1547"/>
-    <stop offset="1" stop-color="#07241D"/>
-  </linearGradient>`);
+// 5. opaque, for stores that reject transparency
+function solid(px = CANVAS) {
+  const shape = squircle(CARD.cx, CARD.cy, CARD.r);
+  const inner = squircle(CARD.cx, CARD.cy, CARD.r - CARD.r * 0.028);
+  const defs = `
+  <linearGradient id="bg" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1024" y2="1024">
+    <stop offset="0"   stop-color="#F7F9FC"/>
+    <stop offset="0.55" stop-color="#E4E9F1"/>
+    <stop offset="1"   stop-color="#CBD4E2"/>
+  </linearGradient>
+  <filter id="cast" x="-30%" y="-30%" width="160%" height="160%">
+    <feGaussianBlur stdDeviation="26"/>
+  </filter>` + cardDefs('c', shape, CARD_BOX) + markDefs('m', 512, 512, MARK_ON_CARD);
+  const body = `<rect width="1024" height="1024" fill="url(#bg)"/>
+  <g filter="url(#cast)" opacity="0.30">
+    <path d="${shape}" transform="translate(0,22)" fill="#4B5A73"/>
+  </g>
+  ` + cardBody('c', shape, inner, CARD_BOX) + markBody('m', 512, 512, MARK_ON_CARD);
+  return svg(px, defs, body);
+}
 
-// 5. opaque square icon (stores, docs, anywhere a flat square is needed)
-const solid = (size = 1024) => {
-  const inner = glass(size);
-  return inner.replace('<defs>', `<defs><linearGradient id="solidBg" x1="0" y1="0" x2="1" y2="1">
-    <stop offset="0" stop-color="#1C1547"/><stop offset="1" stop-color="#07241D"/></linearGradient>`)
-    .replace(/(<\/defs>\n)/, `$1<rect width="${size}" height="${size}" fill="url(#solidBg)"/>\n`);
-};
+// 6/7. adaptive icon layers. 1024 viewport == 108dp; the mark is kept at
+// 50dp so it survives every launcher mask, and the background is full bleed.
+const DP = CANVAS / 108;
+const ADAPTIVE_MARK = Math.round(50 * DP);
 
-// ---------------------------------------------------------------- android vector
-function vectorDrawable({ dp = 24, mono = false, frac = 0.92 } = {}) {
-  const grad = `<aapt:attr name="android:fillColor">
-        <gradient android:type="linear"
-            android:startX="380" android:startY="170"
-            android:endX="620" android:endY="600">
-          <item android:offset="0"    android:color="${C.violet}"/>
-          <item android:offset="0.30" android:color="${C.indigo}"/>
-          <item android:offset="0.72" android:color="${C.teal}"/>
-          <item android:offset="1"    android:color="${C.green}"/>
-        </gradient>
-      </aapt:attr>`;
-  const gradStroke = grad.replace('android:fillColor', 'android:strokeColor');
+function adaptiveBackground(px = CANVAS) {
+  const defs = `
+  <linearGradient id="ab" gradientUnits="userSpaceOnUse" x1="120" y1="0" x2="900" y2="1024">
+    <stop offset="0"    stop-color="#FFFFFF"/>
+    <stop offset="0.34" stop-color="#EAEFF7"/>
+    <stop offset="0.70" stop-color="#C4D0E3"/>
+    <stop offset="1"    stop-color="#9FB1CC"/>
+  </linearGradient>
+  <radialGradient id="as" gradientUnits="userSpaceOnUse" cx="300" cy="190" r="820">
+    <stop offset="0"    stop-color="#FFFFFF" stop-opacity="0.85"/>
+    <stop offset="0.45" stop-color="#FFFFFF" stop-opacity="0.20"/>
+    <stop offset="1"    stop-color="#FFFFFF" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="at" gradientUnits="userSpaceOnUse" cx="920" cy="960" r="740">
+    <stop offset="0"   stop-color="#2C63A8" stop-opacity="0.28"/>
+    <stop offset="1"   stop-color="#2C63A8" stop-opacity="0"/>
+  </radialGradient>`;
+  const body = `<rect width="1024" height="1024" fill="url(#ab)"/>
+  <rect width="1024" height="1024" fill="url(#as)"/>
+  <rect width="1024" height="1024" fill="url(#at)"/>`;
+  return svg(px, defs, body);
+}
 
-  // in VectorDrawable a path carries at most one fill and one stroke, so the
-  // capsules (stroked lines) and the plates (filled outlines) are separate.
-  const pass = (fillXml, strokeXml, fillAttr, strokeAttr, extra) => `
-    <path android:pathData="${P.palm}" ${fillAttr}>${fillXml}</path>
-    <path android:pathData="${P.thumb}" ${strokeAttr}
-        android:strokeWidth="${THUMB_W + extra}"
-        android:strokeLineCap="round" android:strokeLineJoin="round">${strokeXml}</path>
-    <group android:rotation="${ROT.ring[0]}" android:pivotX="${ROT.ring[1]}" android:pivotY="${ROT.ring[2]}">
-      <path android:pathData="${P.ring}" ${fillAttr}>${fillXml}</path>
-    </group>
-    <group android:rotation="${ROT.pinky[0]}" android:pivotX="${ROT.pinky[1]}" android:pivotY="${ROT.pinky[2]}">
-      <path android:pathData="${P.pinky}" ${fillAttr}>${fillXml}</path>
-    </group>
-    <path android:pathData="${P.index}" ${strokeAttr}
-        android:strokeWidth="${FINGER_W + extra}"
-        android:strokeLineCap="round" android:strokeLineJoin="round">${strokeXml}</path>
-    <path android:pathData="${P.middle}" ${strokeAttr}
-        android:strokeWidth="${FINGER_W + extra}"
-        android:strokeLineCap="round" android:strokeLineJoin="round">${strokeXml}</path>`;
+function adaptiveForeground(px = CANVAS) {
+  return svg(px, markDefs('m', 512, 512, ADAPTIVE_MARK),
+    markBody('m', 512, 512, ADAPTIVE_MARK));
+}
 
-  // the outline pass grows the plates by stroking them in the same ink colour
-  const outlinePlate = (d, rot) => {
-    const body = `<path android:pathData="${d}" android:fillColor="${C.ink}"
-        android:strokeColor="${C.ink}" android:strokeWidth="${RIM}"
-        android:strokeLineJoin="round"/>`;
-    return rot
-      ? `<group android:rotation="${rot[0]}" android:pivotX="${rot[1]}" android:pivotY="${rot[2]}">${body}</group>`
-      : body;
-  };
+// 8. Android TV banner, 320x180dp. The adaptive form insets the foreground by
+// 10%, so the transparent layer carries a bigger mark than the flat fallback.
+const BANNER = { w: 320, h: 180 };
+const BANNER_BG = '#E4E9F1';
 
-  const body = mono ? `
-    <path android:pathData="${P.palm}" android:fillColor="#FFFFFF"/>
-    <path android:pathData="${P.thumb}" android:strokeColor="#FFFFFF"
-        android:strokeWidth="${THUMB_W}" android:strokeLineCap="round"/>
-    <group android:rotation="${ROT.ring[0]}" android:pivotX="${ROT.ring[1]}" android:pivotY="${ROT.ring[2]}">
-      <path android:pathData="${P.ring}" android:fillColor="#FFFFFF"/>
-    </group>
-    <group android:rotation="${ROT.pinky[0]}" android:pivotX="${ROT.pinky[1]}" android:pivotY="${ROT.pinky[2]}">
-      <path android:pathData="${P.pinky}" android:fillColor="#FFFFFF"/>
-    </group>
-    <path android:pathData="${P.index}" android:strokeColor="#FFFFFF"
-        android:strokeWidth="${FINGER_W}" android:strokeLineCap="round"/>
-    <path android:pathData="${P.middle}" android:strokeColor="#FFFFFF"
-        android:strokeWidth="${FINGER_W}" android:strokeLineCap="round"/>` : `
-    <!-- pass 1: dark outline -->
-    ${outlinePlate(P.palm)}
-    <path android:pathData="${P.thumb}" android:strokeColor="${C.ink}"
-        android:strokeWidth="${THUMB_W + RIM}" android:strokeLineCap="round"/>
-    ${outlinePlate(P.ring, ROT.ring)}
-    ${outlinePlate(P.pinky, ROT.pinky)}
-    <path android:pathData="${P.index}" android:strokeColor="${C.ink}"
-        android:strokeWidth="${FINGER_W + RIM}" android:strokeLineCap="round"/>
-    <path android:pathData="${P.middle}" android:strokeColor="${C.ink}"
-        android:strokeWidth="${FINGER_W + RIM}" android:strokeLineCap="round"/>
-    <!-- pass 2: gradient fill -->
-    ${pass(grad, gradStroke, '', '', 0)}
-    <!-- pass 3: detail lines -->
-    <group android:rotation="${ROT.ring[0]}" android:pivotX="${ROT.ring[1]}" android:pivotY="${ROT.ring[2]}">
-      <path android:pathData="${P.ring}" android:strokeColor="${C.ink}" android:strokeWidth="${DETAIL}"/>
-    </group>
-    <group android:rotation="${ROT.pinky[0]}" android:pivotX="${ROT.pinky[1]}" android:pivotY="${ROT.pinky[2]}">
-      <path android:pathData="${P.pinky}" android:strokeColor="${C.ink}" android:strokeWidth="${DETAIL}"/>
-    </group>
-    <path android:pathData="${P.crease}" android:strokeColor="${C.ink}"
-        android:strokeWidth="${DETAIL}" android:strokeLineCap="round"/>`;
+function bannerForeground(scale = 1) {
+  const { w, h } = BANNER;
+  const mh = 150;
+  const cx = w / 2, cy = h / 2;
+  const s = mh / CANVAS;
+  const inner = (cx0) => `<g transform="translate(${cx0},${cy}) scale(${s}) translate(-512,-512)">`;
+  return svgBox(w, h, scale, markDefs('m', 512, 512, 940),
+    `${inner(cx)}${markBody('m', 512, 512, 940, { shadow: false })}</g>`);
+}
 
-  return `<?xml version="1.0" encoding="utf-8"?>
+function bannerFlat(scale = 1) {
+  const { w, h } = BANNER;
+  const mh = 120;
+  const s = mh / CANVAS;
+  const defs = `
+  <linearGradient id="bb" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="${w}" y2="${h}">
+    <stop offset="0"    stop-color="#F7F9FC"/>
+    <stop offset="0.55" stop-color="${BANNER_BG}"/>
+    <stop offset="1"    stop-color="#C6D0E1"/>
+  </linearGradient>
+  <radialGradient id="bs" gradientUnits="userSpaceOnUse" cx="${w * 0.28}" cy="${h * 0.16}" r="${w * 0.62}">
+    <stop offset="0"   stop-color="#FFFFFF" stop-opacity="0.85"/>
+    <stop offset="1"   stop-color="#FFFFFF" stop-opacity="0"/>
+  </radialGradient>` + markDefs('m', 512, 512, 940);
+  const body = `<rect width="${w}" height="${h}" fill="url(#bb)"/>
+  <rect width="${w}" height="${h}" fill="url(#bs)"/>
+  <g transform="translate(${w / 2},${h / 2}) scale(${s}) translate(-512,-512)">
+    ${markBody('m', 512, 512, 940, { shadow: false })}
+  </g>`;
+  return svgBox(w, h, scale, defs, body);
+}
+
+const bannerColorXml = () => `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The glass card's silver, so the TV banner and the app icon read as the
+         same mark rather than two different ones. -->
+    <color name="ic_banner_background">${BANNER_BG}</color>
+</resources>
+`;
+
+// ---------------------------------------------------------------- android xml
+const vecHead = (dp, extra = '') =>
+  `<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="${dp}dp"
     android:height="${dp}dp"
     android:viewportWidth="1024"
-    android:viewportHeight="1024">
-  <group android:translateX="${(1024 / 2 - (BBOX.x + BBOX.w / 2) * (1024 * frac / BBOX.h)).toFixed(2)}"
-         android:translateY="${(1024 / 2 - (BBOX.y + BBOX.h / 2) * (1024 * frac / BBOX.h)).toFixed(2)}"
-         android:scaleX="${(1024 * frac / BBOX.h).toFixed(5)}"
-         android:scaleY="${(1024 * frac / BBOX.h).toFixed(5)}">
-${body}
-  </group>
+    android:viewportHeight="1024"${extra}>`;
+
+const stops = (list) =>
+  list.map(([o, c]) => `        <item android:offset="${o}" android:color="${c}"/>`).join('\n');
+
+const linearFill = (x1, y1, x2, y2, list) => `
+    <aapt:attr name="android:fillColor">
+      <gradient android:type="linear"
+          android:startX="${x1}" android:startY="${y1}"
+          android:endX="${x2}" android:endY="${y2}">
+${stops(list)}
+      </gradient>
+    </aapt:attr>`;
+
+const radialFill = (cx, cy, r, list) => `
+    <aapt:attr name="android:fillColor">
+      <gradient android:type="radial"
+          android:centerX="${cx}" android:centerY="${cy}" android:gradientRadius="${r}">
+${stops(list)}
+      </gradient>
+    </aapt:attr>`;
+
+// VectorDrawable has no filters, so the vector mark is body gradient + gloss
+// clipped to the silhouette. Same read, no blur.
+function vectorMark(dp, h, tone = 'deep') {
+  const d = markPath(512, 512, h);
+  const w = markW(h);
+  const t = 512 - h / 2;
+  const off = ['0', '0.22', '0.55', '0.82', '1'];
+  const fill = linearFill(
+    (512 - w * 0.42).toFixed(1), t.toFixed(1),
+    (512 + w * 0.46).toFixed(1), (512 + h / 2).toFixed(1),
+    TONE[tone].map((c, i) => [off[i], '#FF' + c.slice(1)]));
+  const gloss = linearFill(512, t.toFixed(1), 512, (t + h * 0.66).toFixed(1),
+    [['0', '#42FFFFFF'], ['0.45', '#12FFFFFF'], ['1', '#00FFFFFF']]);
+  return `${vecHead(dp)}
+  <path android:pathData="${d}">${fill}
+  </path>
+  <path android:pathData="${d}">${gloss}
+  </path>
 </vector>
 `;
 }
 
-// ---------------------------------------------------------------- android xml
-const ADAPTIVE_ICON = (round) => `<?xml version="1.0" encoding="utf-8"?>
+function vectorLauncherForeground() {
+  return vectorMark(108, ADAPTIVE_MARK);
+}
+
+function vectorLauncherBackground() {
+  const full = 'M0,0 L1024,0 L1024,1024 L0,1024 Z';
+  return `${vecHead(108)}
+  <path android:pathData="${full}">${linearFill(120, 0, 900, 1024,
+    [['0', '#FFFFFFFF'], ['0.34', '#FFEAEFF7'], ['0.70', '#FFC4D0E3'], ['1', '#FF9FB1CC']])}
+  </path>
+  <path android:pathData="${full}">${radialFill(300, 190, 820,
+    [['0', '#D9FFFFFF'], ['0.45', '#33FFFFFF'], ['1', '#00FFFFFF']])}
+  </path>
+  <path android:pathData="${full}">${radialFill(920, 960, 740,
+    [['0', '#472C63A8'], ['1', '#002C63A8']])}
+  </path>
+</vector>
+`;
+}
+
+// The monochrome layer of an adaptive icon: solid white, no tint of its own —
+// the launcher recolours it from the system theme.
+function vectorMono() {
+  return `${vecHead(108)}
+  <path android:pathData="${markPath(512, 512, ADAPTIVE_MARK)}" android:fillColor="#FFFFFFFF"/>
+</vector>
+`;
+}
+
+const adaptiveXml = () => `<?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@drawable/ic_launcher_background" />
     <foreground android:drawable="@drawable/ic_launcher_foreground" />
@@ -292,178 +431,155 @@ const ADAPTIVE_ICON = (round) => `<?xml version="1.0" encoding="utf-8"?>
 </adaptive-icon>
 `;
 
-const BACKGROUND_VECTOR = `<?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:aapt="http://schemas.android.com/aapt"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-  <path android:pathData="M0,0h108v108h-108z">
-    <aapt:attr name="android:fillColor">
-      <gradient android:type="linear"
-          android:startX="0" android:startY="0" android:endX="108" android:endY="108">
-        <item android:offset="0" android:color="#1C1547"/>
-        <item android:offset="1" android:color="#07241D"/>
-      </gradient>
-    </aapt:attr>
-  </path>
-  <path android:pathData="M0,0h108v108h-108z">
-    <aapt:attr name="android:fillColor">
-      <gradient android:type="radial"
-          android:centerX="54" android:centerY="66" android:gradientRadius="54">
-        <item android:offset="0" android:color="#4D2EE59D"/>
-        <item android:offset="1" android:color="#002EE59D"/>
-      </gradient>
-    </aapt:attr>
-  </path>
-  <path android:pathData="M0,0h108v108h-108z">
-    <aapt:attr name="android:fillColor">
-      <gradient android:type="radial"
-          android:centerX="40" android:centerY="34" android:gradientRadius="46">
-        <item android:offset="0" android:color="#4D8B6BFF"/>
-        <item android:offset="1" android:color="#008B6BFF"/>
-      </gradient>
-    </aapt:attr>
-  </path>
-</vector>
+const bannerXml = () => `<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_banner_background" />
+    <foreground>
+        <inset
+            android:drawable="@mipmap/ic_banner_foreground"
+            android:inset="10%" />
+    </foreground>
+</adaptive-icon>
 `;
 
-const COLORS_XML = `<?xml version="1.0" encoding="utf-8"?>
+const colorsXml = () => `<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="logo_violet">${C.violet}</color>
-    <color name="logo_indigo">${C.indigo}</color>
-    <color name="logo_teal">${C.teal}</color>
-    <color name="logo_green">${C.green}</color>
+    <color name="logo_blue_lit">${C.blueLit}</color>
+    <color name="logo_blue">${C.blue}</color>
+    <color name="logo_blue_mid">${C.blueMid}</color>
+    <color name="logo_blue_deep">${C.blueDeep}</color>
     <color name="logo_ink">${C.ink}</color>
+    <color name="logo_silver">${C.silver}</color>
+    <color name="logo_silver_mid">${C.silverMid}</color>
+    <color name="logo_silver_low">${C.silverLow}</color>
+    <color name="logo_steel">${C.steel}</color>
 </resources>
 `;
 
-const README = `# v2rayNG logo
-
-همه چیز از \`build.js\` ساخته می‌شود؛ فایل‌ها را دستی ویرایش نکنید، اسکریپت را دوباره اجرا کنید.
-
-## svg/  — منبع وکتور
-| فایل | کاربرد |
-|---|---|
-| \`logo-glass.svg\` | لوگوی اصلی: کارت شیشه‌ای + دست، پس‌زمینه کاملاً شفاف |
-| \`logo-mark.svg\` | فقط علامت دست، بدون کارت، شفاف — برای داخل برنامه |
-| \`logo-mono-white.svg\` | تک‌رنگ سفید — نوار وضعیت، نوتیفیکیشن، themed icon |
-| \`logo-mono-black.svg\` | تک‌رنگ مشکی — چاپ و پس‌زمینهٔ روشن |
-| \`logo-solid.svg\` | همان لوگوی شیشه‌ای روی پس‌زمینهٔ مات — استور و مستندات |
-| \`adaptive-foreground.svg\` | لایهٔ جلوی adaptive icon (محتوا داخل safe zone) |
-| \`adaptive-background.svg\` | لایهٔ پشت adaptive icon |
-
-## android/  — آمادهٔ کپی در \`app/src/main/res\`
-- \`drawable/ic_logo.xml\` — vector drawable با گرادیان، ۲۴dp، برای استفاده در layout و منو
-- \`drawable/ic_logo_large.xml\` — همان، ۹۶dp، برای splash و صفحهٔ About
-- \`drawable/ic_logo_mono.xml\` — تک‌رنگ و tint‌پذیر (\`android:tint\`)
-- \`drawable/ic_launcher_foreground.xml\` + \`ic_launcher_background.xml\` — لایه‌های وکتور adaptive icon
-- \`mipmap-anydpi-v26/ic_launcher.xml\`, \`ic_launcher_round.xml\` — تعریف adaptive icon
-- \`mipmap-*/ic_launcher*.png\` — fallback رستری برای اندروید < ۸
-- \`drawable-*/ic_logo.png\` — fallback رستری علامت، ۲۴dp در هر تراکم
-- \`values/logo_colors.xml\` — پالت رنگ
-
-نصب:
-\`\`\`powershell
-$src = "design/logo/android"
-$dst = "V2rayNG/app/src/main/res"
-Copy-Item "$src/*" $dst -Recurse -Force
-\`\`\`
-\`logo_colors.xml\` عمداً فقط رنگ‌های \`logo_*\` را دارد و \`ic_launcher_background\` را تعریف نمی‌کند،
-چون آن نام در \`values/colors.xml\` پروژه از قبل هست و تعریف دوباره‌اش build را می‌شکند.
-
-نکته: \`AndroidManifest.xml\` فعلاً به \`@mipmap/ic_launcher\` اشاره می‌کند و همان درست است — فایل‌های بالا جای قبلی‌ها را می‌گیرند.
-
-## png/  — رستر شفاف
-- \`png/icon/logo-glass-{16..1024}.png\`
-- \`png/mark/logo-mark-{16..1024}.png\`
-- \`png/mono/logo-mono-{24,48,96,192,512}.png\`
-
-## store/
-- \`play-store-512.png\` — آیکون Google Play (۵۱۲×۵۱۲ مات)
-- \`logo-1024.png\` — نسخهٔ شفاف بزرگ
-
-## پالت
-| نقش | کد |
-|---|---|
-| بنفش (نوک انگشت‌ها) | \`${C.violet}\` |
-| نیلی | \`${C.indigo}\` |
-| فیروزه‌ای | \`${C.teal}\` |
-| سبز (کف دست) | \`${C.green}\` |
-| خط دور | \`${C.ink}\` |
-`;
-
-// ---------------------------------------------------------------- emit
-const write = (rel, data) => {
-  const p = path.join(OUT, rel);
-  fs.mkdirSync(path.dirname(p), { recursive: true });
-  fs.writeFileSync(p, data);
+// ---------------------------------------------------------------- output
+const mk = (p) => (fs.mkdirSync(path.join(OUT, p), { recursive: true }), path.join(OUT, p));
+const write = (rel, text) => {
+  const f = path.join(OUT, rel);
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  fs.writeFileSync(f, text);
 };
-const png = (rel, source, size) => {
-  const p = path.join(OUT, rel);
-  fs.mkdirSync(path.dirname(p), { recursive: true });
-  return sharp(Buffer.from(source), { density: 288 })
-    .resize(size, size, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+
+// render at 4x then box down, so hairlines and sharp tips stay clean at 16px
+async function png(make, size, rel) {
+  const ss = Math.min(Math.max(size * 4, 1024), 4096);
+  const buf = await sharp(Buffer.from(make(ss)))
+    .resize(size, size, { kernel: sharp.kernel.lanczos3 })
     .png({ compressionLevel: 9 })
-    .toFile(p);
-};
+    .toBuffer();
+  const f = path.join(OUT, rel);
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  fs.writeFileSync(f, buf);
+}
 
-(async () => {
-  // --- vectors
-  write('svg/logo-glass.svg', glass(1024));
-  write('svg/logo-mark.svg', mark(1024));
-  write('svg/logo-mono-white.svg', monoMark(1024, '#FFFFFF'));
-  write('svg/logo-mono-black.svg', monoMark(1024, '#000000'));
-  write('svg/logo-solid.svg', solid(1024));
-  write('svg/adaptive-foreground.svg', adaptiveFg(1024));
-  write('svg/adaptive-background.svg', adaptiveBg(1024));
+async function pngBox(make, w, h, rel) {
+  const buf = await sharp(Buffer.from(make(4)))
+    .resize(w, h, { kernel: sharp.kernel.lanczos3 })
+    .png({ compressionLevel: 9 })
+    .toBuffer();
+  const f = path.join(OUT, rel);
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  fs.writeFileSync(f, buf);
+}
 
-  write('android/drawable/ic_logo.xml', vectorDrawable({ dp: 24 }));
-  write('android/drawable/ic_logo_large.xml', vectorDrawable({ dp: 96 }));
-  write('android/drawable/ic_logo_mono.xml', vectorDrawable({ dp: 108, mono: true, frac: 0.52 }));
-  write('android/drawable/ic_launcher_foreground.xml', vectorDrawable({ dp: 108, frac: 0.52 }));
-  write('android/drawable/ic_launcher_background.xml', BACKGROUND_VECTOR);
-  write('android/mipmap-anydpi-v26/ic_launcher.xml', ADAPTIVE_ICON(false));
-  write('android/mipmap-anydpi-v26/ic_launcher_round.xml', ADAPTIVE_ICON(true));
-  write('android/values/logo_colors.xml', COLORS_XML);
-  write('README.md', README);
+const ICON_SIZES = [16, 24, 32, 48, 64, 96, 128, 144, 192, 256, 384, 512, 1024];
+const MONO_SIZES = [24, 48, 96, 192, 512];
+const DENSITY = { mdpi: 1, hdpi: 1.5, xhdpi: 2, xxhdpi: 3, xxxhdpi: 4 };
 
-  // --- rasters
-  const GLASS = glass(1024), MARK = mark(1024), MONO = monoMark(1024, '#FFFFFF');
-  const SOLID = solid(1024), FG = adaptiveFg(1024), BG = adaptiveBg(1024);
+// A single sheet to eyeball the set: the icon on light and on dark, the bare
+// mark, the round fallback, the TV banner, and the real launcher sizes.
+async function preview() {
+  const svgBuf = (make, px) =>
+    sharp(Buffer.from(make(px * 4))).resize(px, px, { kernel: sharp.kernel.lanczos3 }).png().toBuffer();
+  const tile = (w, h, color) =>
+    sharp({ create: { width: w, height: h, channels: 4, background: color } }).png().toBuffer();
 
-  const jobs = [];
-  for (const s of [16, 24, 32, 48, 64, 96, 128, 144, 192, 256, 384, 512, 1024]) {
-    jobs.push(png(`png/icon/logo-glass-${s}.png`, GLASS, s));
-    jobs.push(png(`png/mark/logo-mark-${s}.png`, MARK, s));
+  const [glassBig, glassDark, markBig, roundBig] = await Promise.all(
+    [glass, glass, (px) => markOnly(px, 980), glassRound].map((f) => svgBuf(f, 260)));
+  const banner = await sharp(Buffer.from(bannerFlat(4)))
+    .resize(320, 180, { kernel: sharp.kernel.lanczos3 }).png().toBuffer();
+  const stripSizes = [48, 72, 96, 144, 192];
+  const strip = await Promise.all(stripSizes.map((s) => svgBuf(glass, s)));
+
+  const W = 1180, H = 700;
+  const layers = [
+    { input: await tile(300, 300, '#1B1D23'), left: 320, top: 40 },
+    { input: glassBig, left: 340, top: 60 },
+    { input: glassDark, left: 40, top: 60 },
+    { input: markBig, left: 640, top: 60 },
+    { input: roundBig, left: 910, top: 60 },
+    { input: banner, left: 40, top: 400 },
+    { input: await tile(1100, 2, '#D3D8E2'), left: 40, top: 360 },
+  ];
+  let x = 420;
+  strip.forEach((buf, i) => {
+    const s = stripSizes[i];
+    layers.push({ input: buf, left: x, top: 400 + (192 - s) });
+    x += s + 34;
+  });
+
+  const out = await sharp({ create: { width: W, height: H, channels: 4, background: '#F5F6FA' } })
+    .composite(layers).png({ compressionLevel: 9 }).toBuffer();
+  fs.writeFileSync(path.join(OUT, 'preview.png'), out);
+}
+
+async function main() {
+  // --- svg sources
+  write('svg/logo-glass.svg', glass());
+  write('svg/logo-glass-round.svg', glassRound());
+  write('svg/logo-mark.svg', markOnly());
+  write('svg/logo-mono-white.svg', mono(CANVAS, '#FFFFFF'));
+  write('svg/logo-mono-black.svg', mono(CANVAS, '#000000'));
+  write('svg/logo-solid.svg', solid());
+  write('svg/adaptive-foreground.svg', adaptiveForeground());
+  write('svg/adaptive-background.svg', adaptiveBackground());
+  write('svg/tv-banner.svg', bannerFlat());
+
+  // --- android xml
+  write('android/drawable/ic_launcher_foreground.xml', vectorLauncherForeground());
+  write('android/drawable/ic_launcher_background.xml', vectorLauncherBackground());
+  write('android/drawable/ic_logo.xml', vectorMark(24, 940, 'lit'));
+  write('android/drawable/ic_logo_large.xml', vectorMark(96, 940, 'lit'));
+  write('android/drawable/ic_logo_mono.xml', vectorMono());
+  write('android/mipmap-anydpi-v26/ic_launcher.xml', adaptiveXml());
+  write('android/mipmap-anydpi-v26/ic_launcher_round.xml', adaptiveXml());
+  write('android/mipmap-anydpi-v26/ic_banner.xml', bannerXml());
+  write('android/values/logo_colors.xml', colorsXml());
+  write('android/values/ic_banner_background.xml', bannerColorXml());
+
+  // --- android tv banner (xhdpi only, the density the manifest ships)
+  await pngBox(bannerFlat, BANNER.w, BANNER.h, 'android/mipmap-xhdpi/ic_banner.png');
+  await pngBox(bannerForeground, BANNER.w, BANNER.h, 'android/mipmap-xhdpi/ic_banner_foreground.png');
+
+  // --- android raster
+  for (const [d, k] of Object.entries(DENSITY)) {
+    await png(glass, Math.round(48 * k), `android/mipmap-${d}/ic_launcher.png`);
+    await png(glassRound, Math.round(48 * k), `android/mipmap-${d}/ic_launcher_round.png`);
+    await png(adaptiveBackground, Math.round(108 * k), `android/mipmap-${d}/ic_launcher_background.png`);
+    await png(adaptiveForeground, Math.round(108 * k), `android/mipmap-${d}/ic_launcher_foreground.png`);
+    await png((px) => markOnly(px, 980), Math.round(24 * k), `android/drawable-${d}/ic_logo.png`);
   }
-  for (const s of [24, 48, 96, 192, 512]) {
-    jobs.push(png(`png/mono/logo-mono-${s}.png`, MONO, s));
+
+  // --- generic raster
+  for (const s of ICON_SIZES) {
+    await png(glass, s, `png/icon/logo-glass-${s}.png`);
+    await png((px) => markOnly(px, 980), s, `png/mark/logo-mark-${s}.png`);
+  }
+  for (const s of MONO_SIZES) {
+    await png((px) => mono(px, '#FFFFFF', 980), s, `png/mono/logo-mono-${s}.png`);
   }
 
-  // launcher icons, per density (48dp)
-  const LAUNCHER = { mdpi: 48, hdpi: 72, xhdpi: 96, xxhdpi: 144, xxxhdpi: 192 };
-  for (const [d, s] of Object.entries(LAUNCHER)) {
-    jobs.push(png(`android/mipmap-${d}/ic_launcher.png`, SOLID, s));
-    jobs.push(png(`android/mipmap-${d}/ic_launcher_round.png`, SOLID, s));
-  }
-  // adaptive layers, per density (108dp)
-  const ADAPTIVE = { mdpi: 108, hdpi: 162, xhdpi: 216, xxhdpi: 324, xxxhdpi: 432 };
-  for (const [d, s] of Object.entries(ADAPTIVE)) {
-    jobs.push(png(`android/mipmap-${d}/ic_launcher_foreground.png`, FG, s));
-    jobs.push(png(`android/mipmap-${d}/ic_launcher_background.png`, BG, s));
-  }
-  // in-app drawable, per density (24dp base)
-  const DRAWABLE = { mdpi: 24, hdpi: 36, xhdpi: 48, xxhdpi: 72, xxxhdpi: 96 };
-  for (const [d, s] of Object.entries(DRAWABLE)) {
-    jobs.push(png(`android/drawable-${d}/ic_logo.png`, MARK, s));
-  }
+  // --- store
+  await png(solid, 512, 'store/play-store-512.png');
+  await png(glass, 1024, 'store/logo-1024.png');
 
-  jobs.push(png('store/play-store-512.png', SOLID, 512));
-  jobs.push(png('store/logo-1024.png', GLASS, 1024));
+  await preview();
 
-  await Promise.all(jobs);
-  write('build.js', fs.readFileSync(__filename));  // keep the source next to the output
-  console.log('done ->', OUT);
-})();
+  console.log('logo assets rebuilt in', OUT);
+}
+
+main().catch((e) => { console.error(e); process.exit(1); });

@@ -1,13 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
 <defs>
-  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-    <stop offset="0" stop-color="#1C1547"/>
-    <stop offset="1" stop-color="#07241D"/>
-  </linearGradient></defs>
-
-  <rect width="1024" height="1024" fill="url(#bg)"/>
-  <ellipse cx="512" cy="634.88" rx="471.04" ry="409.6"
-           fill="#2EE59D" opacity="0.16"/>
-  <ellipse cx="368.64" cy="307.2" rx="409.6" ry="337.92"
-           fill="#6A4BF5" opacity="0.18"/>
+  <linearGradient id="ab" gradientUnits="userSpaceOnUse" x1="120" y1="0" x2="900" y2="1024">
+    <stop offset="0"    stop-color="#FFFFFF"/>
+    <stop offset="0.34" stop-color="#EAEFF7"/>
+    <stop offset="0.70" stop-color="#C4D0E3"/>
+    <stop offset="1"    stop-color="#9FB1CC"/>
+  </linearGradient>
+  <radialGradient id="as" gradientUnits="userSpaceOnUse" cx="300" cy="190" r="820">
+    <stop offset="0"    stop-color="#FFFFFF" stop-opacity="0.85"/>
+    <stop offset="0.45" stop-color="#FFFFFF" stop-opacity="0.20"/>
+    <stop offset="1"    stop-color="#FFFFFF" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="at" gradientUnits="userSpaceOnUse" cx="920" cy="960" r="740">
+    <stop offset="0"   stop-color="#2C63A8" stop-opacity="0.28"/>
+    <stop offset="1"   stop-color="#2C63A8" stop-opacity="0"/>
+  </radialGradient>
+</defs>
+<rect width="1024" height="1024" fill="url(#ab)"/>
+  <rect width="1024" height="1024" fill="url(#as)"/>
+  <rect width="1024" height="1024" fill="url(#at)"/>
 </svg>

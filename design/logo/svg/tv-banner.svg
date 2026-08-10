@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180">
+<defs>
+  <linearGradient id="bb" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="320" y2="180">
+    <stop offset="0"    stop-color="#F7F9FC"/>
+    <stop offset="0.55" stop-color="#E4E9F1"/>
+    <stop offset="1"    stop-color="#C6D0E1"/>
+  </linearGradient>
+  <radialGradient id="bs" gradientUnits="userSpaceOnUse" cx="89.60000000000001" cy="28.8" r="198.4">
+    <stop offset="0"   stop-color="#FFFFFF" stop-opacity="0.85"/>
+    <stop offset="1"   stop-color="#FFFFFF" stop-opacity="0"/>
+  </radialGradient>
+  <linearGradient id="mFill" gradientUnits="userSpaceOnUse"
+                  x1="145.6" y1="42.0"
+                  x2="913.2" y2="982.0">
+    <stop offset="0"    stop-color="#4C8AC9"/>
+    <stop offset="0.22" stop-color="#2A62A8"/>
+    <stop offset="0.55" stop-color="#123E7E"/>
+    <stop offset="0.82" stop-color="#08275F"/>
+    <stop offset="1"    stop-color="#041D50"/>
+  </linearGradient>
+  <linearGradient id="mGloss" gradientUnits="userSpaceOnUse"
+                  x1="512" y1="42.0" x2="512" y2="662.4">
+    <stop offset="0"    stop-color="#FFFFFF" stop-opacity="0.26"/>
+    <stop offset="0.45" stop-color="#FFFFFF" stop-opacity="0.07"/>
+    <stop offset="1"    stop-color="#FFFFFF" stop-opacity="0"/>
+  </linearGradient>
+  <linearGradient id="mEdge" gradientUnits="userSpaceOnUse"
+                  x1="163.1" y1="42.0"
+                  x2="860.9" y2="982.0">
+    <stop offset="0"    stop-color="#DCEAFF" stop-opacity="0.80"/>
+    <stop offset="0.40" stop-color="#FFFFFF" stop-opacity="0.14"/>
+    <stop offset="1"    stop-color="#7FB2FF" stop-opacity="0.34"/>
+  </linearGradient>
+  <clipPath id="mClip"><path d="M187.11,435.41L75.86,596.65L512.00,982.00L948.14,596.65L836.89,435.41L836.89,42.00L512.00,391.88L187.11,42.00Z M512.00,445.09L743.37,200.01L512.00,711.13L280.63,200.01Z M343.51,432.19L230.64,588.59L396.72,840.11L116.17,591.81L225.81,443.48L225.81,177.44Z M798.19,177.44L798.19,443.48L907.83,591.81L627.28,840.11L793.36,588.59L680.49,432.19Z M470.89,706.29L274.18,588.59L361.25,469.27Z M662.75,469.27L749.82,588.59L553.11,706.29Z M512.00,767.56L706.29,656.31L512.00,944.92L317.71,656.31Z"/></clipPath>
+  <filter id="mDrop" x="-25%" y="-25%" width="150%" height="150%">
+    <feGaussianBlur stdDeviation="15.98"/>
+  </filter>
+</defs>
+<rect width="320" height="180" fill="url(#bb)"/>
+  <rect width="320" height="180" fill="url(#bs)"/>
+  <g transform="translate(160,90) scale(0.1171875) translate(-512,-512)">
+    
+  <path d="M187.11,435.41L75.86,596.65L512.00,982.00L948.14,596.65L836.89,435.41L836.89,42.00L512.00,391.88L187.11,42.00Z M512.00,445.09L743.37,200.01L512.00,711.13L280.63,200.01Z M343.51,432.19L230.64,588.59L396.72,840.11L116.17,591.81L225.81,443.48L225.81,177.44Z M798.19,177.44L798.19,443.48L907.83,591.81L627.28,840.11L793.36,588.59L680.49,432.19Z M470.89,706.29L274.18,588.59L361.25,469.27Z M662.75,469.27L749.82,588.59L553.11,706.29Z M512.00,767.56L706.29,656.31L512.00,944.92L317.71,656.31Z" fill="url(#mFill)"/>
+  <g clip-path="url(#mClip)">
+    <path d="M187.11,435.41L75.86,596.65L512.00,982.00L948.14,596.65L836.89,435.41L836.89,42.00L512.00,391.88L187.11,42.00Z M512.00,445.09L743.37,200.01L512.00,711.13L280.63,200.01Z M343.51,432.19L230.64,588.59L396.72,840.11L116.17,591.81L225.81,443.48L225.81,177.44Z M798.19,177.44L798.19,443.48L907.83,591.81L627.28,840.11L793.36,588.59L680.49,432.19Z M470.89,706.29L274.18,588.59L361.25,469.27Z M662.75,469.27L749.82,588.59L553.11,706.29Z M512.00,767.56L706.29,656.31L512.00,944.92L317.71,656.31Z" fill="url(#mGloss)"/>
+    <path d="M187.11,435.41L75.86,596.65L512.00,982.00L948.14,596.65L836.89,435.41L836.89,42.00L512.00,391.88L187.11,42.00Z M512.00,445.09L743.37,200.01L512.00,711.13L280.63,200.01Z M343.51,432.19L230.64,588.59L396.72,840.11L116.17,591.81L225.81,443.48L225.81,177.44Z M798.19,177.44L798.19,443.48L907.83,591.81L627.28,840.11L793.36,588.59L680.49,432.19Z M470.89,706.29L274.18,588.59L361.25,469.27Z M662.75,469.27L749.82,588.59L553.11,706.29Z M512.00,767.56L706.29,656.31L512.00,944.92L317.71,656.31Z" fill="none" stroke="url(#mEdge)"
+          stroke-width="5.83" stroke-linejoin="round"/>
+  </g>
+  </g>
+</svg>
