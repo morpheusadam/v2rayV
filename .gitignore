@@ -68,3 +68,24 @@ Thumbs.db
 # Native build staging (produced by compile-hevtun.sh / compile-hevtun.ps1)
 /libs/
 V2rayNG/app/libs/
+
+# Working notes and session prompts — local only, not part of the published repo
+/HANDOFF.md
+/NEXT-SESSION.md
+/PROMPT.md
+/*-PROMPT.md
+/PROMPT-*.md
+/HANDOFF-*.md
+/NEXT-SESSION-*.md
+/notes/
+/scratch/
+AGENTS.local.md
+CLAUDE.md
+.claude/
+
+# Personal and third-party design material kept out of a GPL repository
+design/original-*
+design/photo_*
+design/source-logo.png
+design/*.psd
+design/*.ai
