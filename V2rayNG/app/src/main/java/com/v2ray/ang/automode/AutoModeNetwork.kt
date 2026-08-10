@@ -27,7 +27,27 @@ import kotlin.random.Random
  */
 object AutoModeNetwork {
 
-    /** The subscription list every run imports from, whatever else the user has added. */
+    /**
+     * The one source every run imports from, whatever else the user has added.
+     *
+     * Deliberately a *bundle* rather than the catalog. The catalog is 1,500 links to other
+     * people's lists; sampling eight of them costs eight fetches to eight strangers, any of
+     * which may be down, and the phone then has to work out which of them were worth
+     * anything. This file is the answer to that question, computed daily against far more
+     * evidence than a phone will ever have: only configs from sources that scored 85 or
+     * better, deduplicated across all of them, best first.
+     *
+     * One fetch, to a host the app already has a mirror ladder for.
+     */
+    const val DEFAULT_SOURCE_URL =
+        "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/best.txt"
+
+    /**
+     * The catalog of other people's subscription links, kept as a second source of variety.
+     *
+     * It is where the bundle above ultimately comes from, and a run that samples it can
+     * still turn up something the daily job has not seen yet.
+     */
     const val DEFAULT_SUBS_URL =
         "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/all.txt"
 

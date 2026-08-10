@@ -444,6 +444,13 @@ class AutoModeEngine(
      */
     private suspend fun refreshCatalog(store: AutoModeStore, proxy: AutoModeProxy?) =
         withContext(Dispatchers.IO) {
+            // The bundle first, and unconditionally: it is one fetch to a host with a mirror
+            // ladder, carrying a selection this device could not compute for itself. The
+            // catalog below is then variety rather than the whole plan.
+            if (AutoModeSourceManager.ensureSource(AutoModeNetwork.DEFAULT_SOURCE_URL)) {
+                report("Added the curated source list.")
+            }
+
             val url = store.subsUrl.ifBlank { AutoModeNetwork.DEFAULT_SUBS_URL }
 
             val body = AutoModeNetwork.fetchText(url, proxy)
