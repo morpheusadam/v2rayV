@@ -1,9 +1,40 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     id("com.jaredsburrows.license")
 }
+
+/**
+ * Release signing, configured out of a file that is never committed.
+ *
+ * This matters beyond tidiness. A debug-signed APK is signed with a certificate that every
+ * Android SDK on earth shares, and Play Protect treats sideloading one as a red flag —
+ * which is what blocked the first install of this app on a real phone. A release build
+ * signed with a key of its own does not carry that particular problem.
+ *
+ * It does not make the warning disappear entirely: Play Protect also warns about
+ * developers it has not seen before, which is a judgement about how many installs a
+ * signing certificate has behind it, not about the APK. That warning fades as the same key
+ * signs more installs, and only if the key never changes — so this key must be kept and
+ * reused for every release rather than regenerated.
+ *
+ * Create `signing.properties` next to this file (it is already gitignored) with:
+ *
+ *     storeFile=C:/Users/.../automode-release.jks
+ *     storePassword=...
+ *     keyAlias=...
+ *     keyPassword=...
+ */
+val signingPropertiesFile = rootProject.file("signing.properties")
+val signingProperties = Properties().apply {
+    if (signingPropertiesFile.exists()) {
+        signingPropertiesFile.inputStream().use { load(it) }
+    }
+}
+val hasReleaseSigning = signingProperties.getProperty("storeFile") != null
 
 android {
     namespace = "com.v2ray.ang"
@@ -45,6 +76,22 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(signingProperties.getProperty("storeFile"))
+                storePassword = signingProperties.getProperty("storePassword")
+                keyAlias = signingProperties.getProperty("keyAlias")
+                keyPassword = signingProperties.getProperty("keyPassword")
+                // v2 and v3 are what a modern Android verifies against; v1 is kept so the
+                // APK still installs on the API 24 devices this app supports.
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -52,6 +99,12 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // Without the properties file the release build stays unsigned rather than
+            // silently falling back to the debug certificate, which would reintroduce the
+            // exact problem this exists to avoid.
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
