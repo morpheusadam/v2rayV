@@ -35,6 +35,14 @@ object AutoModeNetwork {
     const val DEFAULT_PROXIES_URL =
         "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/proxies/all.txt"
 
+    /**
+     * The one channel for telling an installed app something — an update, a notice, an
+     * announcement. Absent or empty means the dashboard shows nothing, which is the
+     * normal state. Read by [com.v2ray.ang.notice.NoticeManager].
+     */
+    const val DEFAULT_NOTICE_URL =
+        "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/app/notice.json"
+
     private const val ASSET_PROXIES = "automode_proxies.txt"
     private const val ASSET_SUBS = "automode_subs.txt"
 

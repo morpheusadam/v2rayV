@@ -21,6 +21,7 @@ import com.v2ray.ang.dto.entities.ServerAffiliationInfo
 import com.v2ray.ang.dto.entities.SubscriptionCache
 import com.v2ray.ang.dto.entities.SubscriptionItem
 import com.v2ray.ang.core.LauncherManager
+import com.v2ray.ang.notice.NoticeInstaller
 import com.v2ray.ang.handler.AngConfigManager
 import com.v2ray.ang.handler.AppLocaleManager
 import com.v2ray.ang.handler.MmkvManager
@@ -290,6 +291,24 @@ class MainRepository(
     override fun scheduleAutoModeRefresh() {
         AutoModeScheduler.schedule(app)
     }
+
+    override fun openUri(url: String) {
+        Utils.openUri(app, url)
+    }
+
+    override fun startIntent(intent: android.content.Intent) {
+        try {
+            // Started from application context rather than an Activity, so it needs its
+            // own task; the notice's button may outlive the screen that raised it.
+            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            app.startActivity(intent)
+        } catch (e: Exception) {
+            LogUtil.e(AppConfig.TAG, "Failed to start intent", e)
+        }
+    }
+
+    override suspend fun installUpdate(url: String): NoticeInstaller.Result =
+        NoticeInstaller.downloadAndInstall(app, url)
 
     override fun measuredSpeeds(guid: String?): Pair<Double, Double> {
         // reload() rather than the cached copy: a run writes its results in the core's

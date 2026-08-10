@@ -42,6 +42,18 @@
     <!-- <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" /> -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!--
+      Lets the app raise Android's install dialog for an update it downloaded, so a user
+      on a sideloaded build can take a fix without going and finding the APK. The app does
+      not install anything itself; the system asks, and refuses outright if the update is
+      not signed with the same key as the installed app.
+
+      Note this is a permission Play Protect's install-time scan weighs, in the opposite
+      direction from removing QUERY_ALL_PACKAGES. It is here because in-app updating was
+      wanted more; drop this line to give that up and let the notice open the release page
+      in a browser instead, which needs no permission at all.
+    -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:name=".AngApplication"

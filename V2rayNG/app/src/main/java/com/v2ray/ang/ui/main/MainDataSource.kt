@@ -82,6 +82,15 @@ interface MainDataSource : Closeable {
      */
     fun measuredSpeeds(guid: String?): Pair<Double, Double>
 
+    /** Opens a URL in whatever the user browses with. */
+    fun openUri(url: String)
+
+    /** Starts a system intent, such as the "install unknown apps" settings page. */
+    fun startIntent(intent: android.content.Intent)
+
+    /** Downloads an update and raises Android's install dialog. */
+    suspend fun installUpdate(url: String): com.v2ray.ang.notice.NoticeInstaller.Result
+
     /**
      * Country and address the traffic is coming out of, asked through the running tunnel.
      * Blocking, and null when nothing is connected.

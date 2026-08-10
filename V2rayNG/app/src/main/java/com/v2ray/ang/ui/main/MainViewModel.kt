@@ -8,6 +8,8 @@ import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
 import com.v2ray.ang.automode.AutoModeProgress
 import com.v2ray.ang.automode.CountryHint
+import com.v2ray.ang.notice.NoticeInstaller
+import com.v2ray.ang.notice.NoticeManager
 import com.v2ray.ang.dto.GroupMapItem
 import com.v2ray.ang.dto.LocateTarget
 import com.v2ray.ang.dto.TestServiceMessage
@@ -301,10 +303,68 @@ class MainViewModel(
                 dataSource.syncSubscriptions()
                 dataSource.scheduleAutoModeRefresh()
                 refreshMeasuredSpeeds()
+                refreshNotice()
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
                 LogUtil.e(AppConfig.TAG, "Main background initialization failed", error)
+            }
+        }
+    }
+
+    // ---------- The notice slot ----------
+
+    /**
+     * Shows the cached notice immediately, then goes and looks for a newer one.
+     *
+     * Cache first because the slot must never be the reason the dashboard waits on the
+     * network, and because a notice that flickers in a second after the screen settles is
+     * more startling than one that was simply there.
+     */
+    private fun refreshNotice() {
+        publishNotice()
+        viewModelScope.launch(ioDispatcher) {
+            try {
+                NoticeManager.refresh()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                LogUtil.e(AppConfig.TAG, "Notice refresh failed", error)
+            }
+            publishNotice()
+        }
+    }
+
+    private fun publishNotice() {
+        val notice = NoticeManager.current()
+        _uiState.update { it.copy(dashboard = it.dashboard.copy(notice = notice)) }
+    }
+
+    fun dismissNotice() {
+        uiState.value.dashboard.notice?.let { NoticeManager.dismiss(it.id) }
+        publishNotice()
+    }
+
+    /**
+     * Runs the notice's button. Only two things can happen: a URL opens, or an update is
+     * downloaded and handed to Android's installer.
+     */
+    fun onNoticeAction() {
+        val action = uiState.value.dashboard.notice?.action ?: return
+        if (!action.isUsable) {
+            return
+        }
+
+        if (action.isOpenUrl) {
+            dataSource.openUri(action.url)
+            return
+        }
+
+        viewModelScope.launch(ioDispatcher) {
+            when (val result = dataSource.installUpdate(action.url)) {
+                is NoticeInstaller.Result.Launched -> Unit
+                is NoticeInstaller.Result.NeedsPermission -> dataSource.startIntent(result.intent)
+                is NoticeInstaller.Result.Failed -> toastError(result.reason)
             }
         }
     }
@@ -940,6 +1000,7 @@ class MainViewModel(
                         serverName = currentServerName(),
                         lineMbps = state.dashboard.lineMbps,
                         vpnMbps = state.dashboard.vpnMbps,
+                        notice = state.dashboard.notice,
                     )
                 }
             )

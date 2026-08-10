@@ -49,6 +49,8 @@ fun DashboardScreen(
     onAutoModeSettings: () -> Unit,
     onOpenServers: () -> Unit,
     onOpenMenu: () -> Unit,
+    onNoticeAction: () -> Unit = {},
+    onNoticeDismiss: () -> Unit = {},
 ) {
     val accent = if (state.connected) Securo.Green else Securo.Red
 
@@ -173,6 +175,13 @@ fun DashboardScreen(
                 onToggle = onToggleAutoMode,
                 onSettings = onAutoModeSettings,
                 onOpenServers = onOpenServers,
+            )
+
+            // Draws nothing at all when there is nothing to say, which is nearly always.
+            NoticeCard(
+                notice = state.notice,
+                onAction = onNoticeAction,
+                onDismiss = onNoticeDismiss,
             )
 
             Spacer(Modifier.navigationBarsPadding())

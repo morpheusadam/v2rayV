@@ -84,6 +84,8 @@ fun MainScreen(
                     onToggleAutoMode = { onAction(MainAction.ToggleAutoMode) },
                     onAutoModeSettings = { onNavigate(MainDestination.AutoMode) },
                     onOpenServers = { rootScope.launch { rootPagerState.animateScrollToPage(1) } },
+                    onNoticeAction = { mainViewModel.onNoticeAction() },
+                    onNoticeDismiss = { mainViewModel.dismissNotice() },
                     onOpenMenu = { rootScope.launch { rootDrawerState.open() } },
                 )
             } else {

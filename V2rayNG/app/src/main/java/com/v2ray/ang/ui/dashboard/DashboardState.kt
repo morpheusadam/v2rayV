@@ -43,6 +43,13 @@ data class DashboardState(
      */
     val testingMbps: Double = 0.0,
     val testing: Boolean = false,
+
+    /**
+     * What the slot at the bottom of the screen should say, or null for the normal case of
+     * nothing at all. Fetched from the config repository rather than built in, so an
+     * installed app can still be told about an update.
+     */
+    val notice: com.v2ray.ang.notice.Notice? = null,
 ) {
     /** Peak seen this session, which is what the meters are scaled against. */
     val peakDown: Long get() = downSamples.maxOrNull() ?: 0L
