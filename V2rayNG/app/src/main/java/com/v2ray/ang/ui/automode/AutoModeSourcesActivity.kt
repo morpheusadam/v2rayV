@@ -142,6 +142,30 @@ private fun AutoModeSourcesScreen(
             }
 
             item {
+                SectionHeader(stringResource(R.string.automode_section_smart_switch))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.automode_smart_switch_label),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Switch(
+                        checked = state.smartSwitch,
+                        onCheckedChange = { viewModel.setSmartSwitch(it) },
+                    )
+                }
+                Text(
+                    text = stringResource(R.string.automode_smart_switch_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Spacer(Modifier.height(8.dp))
+                HorizontalDivider()
+            }
+
+            item {
                 SectionHeader(stringResource(R.string.automode_section_protocol))
                 Text(
                     text = stringResource(R.string.automode_filter_any_hint),

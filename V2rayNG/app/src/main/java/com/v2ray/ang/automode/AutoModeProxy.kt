@@ -150,11 +150,36 @@ data class AutoModeProxy(
             return AutoModeProxy(host, port, protocol, username, password)
         }
 
-        /** Parses a whole list, dropping duplicates by endpoint. */
+        /** The published format this parser was written against. */
+        const val SUPPORTED_FORMAT = "v1"
+
+        private val formatRegex = Regex("^#\\s*format:\\s*(\\S+)", RegexOption.IGNORE_CASE)
+
+        /**
+         * The `# format:` version a list declares, or null when it does not declare one.
+         *
+         * The companion repository generates these files daily and stamps them; a list
+         * written before stamping existed simply has no marker, which is not an error.
+         */
+        fun formatOf(body: String?): String? = body
+            ?.lineSequence()
+            ?.take(FORMAT_SCAN_LINES)
+            ?.firstNotNullOfOrNull { formatRegex.find(it.trim())?.groupValues?.get(1) }
+
+        /**
+         * Parses a whole list, dropping duplicates by endpoint.
+         *
+         * Deliberately says nothing about [formatOf]. A declared version is worth noticing
+         * but never worth enforcing — refusing an unknown one would turn a cosmetic edit in
+         * the generator into a censored network with no proxies at all, on the one path
+         * with no fallback left. Reporting it is the caller's job, which also keeps this
+         * function free of anything that needs an Android runtime to run.
+         */
         fun parseList(body: String?): List<AutoModeProxy> {
             if (body.isNullOrBlank()) {
                 return emptyList()
             }
+
             val seen = mutableSetOf<String>()
             val result = mutableListOf<AutoModeProxy>()
             for (line in body.lineSequence()) {
@@ -165,5 +190,8 @@ data class AutoModeProxy(
             }
             return result
         }
+
+        /** The marker sits in the header; scanning the whole file for it would be pointless. */
+        private const val FORMAT_SCAN_LINES = 20
     }
 }

@@ -142,4 +142,34 @@ class AutoModeProxyTest {
         assertEquals(4145, list[2].port)
         assertEquals(ProxyProtocol.SOCKS4, list[2].protocol)
     }
+
+    @Test
+    fun `reads the format marker the published list is stamped with`() {
+        assertEquals(
+            AutoModeProxy.SUPPORTED_FORMAT,
+            AutoModeProxy.formatOf("# format: v1\n# Proxies that opened a TLS tunnel\n\n1.2.3.4:8080")
+        )
+        assertNull(AutoModeProxy.formatOf("# an older list, written before stamping\n1.2.3.4:8080"))
+    }
+
+    /**
+     * A version this build has not seen is worth a log line and nothing more.
+     *
+     * Refusing to parse it would turn a cosmetic edit in the generator into a censored
+     * network with no proxies at all — the one path with no fallback left. The marker
+     * exists to make drift findable, not to give the client a way to lock itself out.
+     */
+    @Test
+    fun `an unknown format version is still parsed`() {
+        val list = AutoModeProxy.parseList(
+            """
+            # format: v9
+            # something the generator learned to write after this build shipped
+            http://1.231.81.166:3128 | ?? | 1801ms | 1d
+            """.trimIndent()
+        )
+
+        assertEquals(1, list.size)
+        assertEquals("1.231.81.166", list[0].host)
+    }
 }

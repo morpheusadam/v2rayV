@@ -321,6 +321,9 @@
     <string name="title_export_all">Export configs to clipboard</string>
     <string name="title_sub_setting">Subscriptions</string>
     <string name="drawer_servers">Servers</string>
+    <string name="automode_section_smart_switch">SMART SWITCH</string>
+    <string name="automode_smart_switch_label">Move on when a server goes bad</string>
+    <string name="automode_smart_switch_hint">While connected, watch the traffic actually going through the tunnel. If requests stop being answered — or throughput falls to a fraction of what this server measured — switch to the next one in the reserve.\n\nIt only ever acts while you are using the connection. An idle phone reports the same zero as a dead server, so nothing happens until traffic is being asked for and not arriving. Switching drops your open connections, so it waits for the failure to be sustained, and does it at most a few times an hour.</string>
     <string name="drawer_section_configure">CONFIGURE</string>
     <string name="drawer_section_app">APP</string>
     <string name="sub_setting_remarks">Remarks</string>

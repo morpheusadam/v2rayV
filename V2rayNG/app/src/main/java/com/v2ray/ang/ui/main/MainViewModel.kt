@@ -8,8 +8,10 @@ import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
 import com.v2ray.ang.automode.AutoModeProgress
 import com.v2ray.ang.automode.AutoModeReserve
+import com.v2ray.ang.automode.AutoModeSourceManager
 import com.v2ray.ang.automode.AutoModeStage
 import com.v2ray.ang.automode.CountryHint
+import com.v2ray.ang.automode.SmartSwitch
 import com.v2ray.ang.notice.NoticeInstaller
 import com.v2ray.ang.notice.NoticeManager
 import com.v2ray.ang.dto.GroupMapItem
@@ -208,6 +210,7 @@ class MainViewModel(
                         )
                     )
                 }
+                considerSmartSwitch(event.upSpeed, event.downSpeed)
             }
 
             is MainServiceEvent.AutoModeReady -> {
@@ -913,6 +916,47 @@ class MainViewModel(
             }
         }
     }
+
+    /**
+     * The same judgement as pressing "next", made by watching instead of waiting to be told.
+     *
+     * Off unless the user turned it on, because it drops every open connection when it
+     * fires. The decision itself is [SmartSwitch]'s; this only feeds it the counters and
+     * carries out the verdict.
+     *
+     * Built fresh whenever the selected server changes, since it is judged against what
+     * *that* server measured — and reset on a reconnection, so a tunnel is never assessed
+     * on evidence gathered through a different one.
+     */
+    private fun considerSmartSwitch(upSpeed: Long, downSpeed: Long) {
+        if (!uiState.value.isRunning || uiState.value.autoMode.running) {
+            smartSwitch = null
+            return
+        }
+        if (!AutoModeSourceManager.getStore().smartSwitch) {
+            smartSwitch = null
+            return
+        }
+
+        val guid = uiState.value.selectedGuid ?: return
+        if (guid != smartSwitchGuid) {
+            smartSwitchGuid = guid
+            smartSwitch = SmartSwitch(
+                referenceMbps = AutoModeSourceManager.getStore().speedByGuid[guid] ?: 0.0
+            ).also { it.reset(System.currentTimeMillis()) }
+            return
+        }
+
+        val verdict = smartSwitch?.onSample(upSpeed, downSpeed, System.currentTimeMillis())
+        if (verdict is SmartSwitch.Verdict.Switch) {
+            toast(verdict.reason)
+            nextConnection()
+        }
+    }
+
+    /** The judge for the currently selected server, and which server it was built for. */
+    private var smartSwitch: SmartSwitch? = null
+    private var smartSwitchGuid: String? = null
 
 
     /**

@@ -19,6 +19,7 @@ data class AutoModeSettingsState(
     val countryFilter: List<String> = emptyList(),
     val runCount: Int = 0,
     val sourcesPerRun: Int = 8,
+    val smartSwitch: Boolean = false,
 )
 
 class AutoModeSourcesViewModel : ViewModel() {
@@ -57,6 +58,7 @@ class AutoModeSourcesViewModel : ViewModel() {
                 countryFilter = store.countryFilter.toList(),
                 runCount = store.runCount,
                 sourcesPerRun = store.sourcesPerRun,
+                smartSwitch = store.smartSwitch,
             )
         }
     }
@@ -84,6 +86,13 @@ class AutoModeSourcesViewModel : ViewModel() {
     fun setTopCount(count: Int) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) { AutoModeSourceManager.setTopCount(count) }
+            refresh()
+        }
+    }
+
+    fun setSmartSwitch(enabled: Boolean) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { AutoModeSourceManager.setSmartSwitch(enabled) }
             refresh()
         }
     }

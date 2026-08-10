@@ -1,5 +1,12 @@
 [
   {
+    "remarks": "Block ads",
+    "outboundTag": "block",
+    "domain": [
+      "geosite:category-ads-all"
+    ]
+  },
+  {
     "remarks": "Block udp443",
     "outboundTag": "block",
     "port": "443",
@@ -31,7 +38,7 @@
     "remarks": "Bypass Iran IP",
     "outboundTag": "direct",
     "ip": [
-       "geoip:ir"
+      "geoip:ir"
     ]
   }
 ]

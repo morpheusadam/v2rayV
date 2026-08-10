@@ -59,11 +59,24 @@ object SettingsManager {
 
     /**
      * Get preset routing rulesets.
+     *
+     * The default is Iran, not upstream's [RoutingType.WHITE].
+     *
+     * That preset is a China ruleset: it sends `geoip:cn`, `geosite:cn` and the Alibaba and
+     * Tencent resolvers straight out, and says nothing about Iran. A first run on an
+     * Iranian connection therefore pushed every Iranian site — banking, government, the
+     * services that refuse foreign addresses outright — through the tunnel, which is slower
+     * at best and a locked account at worst, while carefully bypassing Chinese ones nobody
+     * was visiting. This app exists for that connection, so that is what it ships set to.
+     *
+     * Only a fresh install is affected: [initRoutingRulesets] writes presets when there are
+     * none, so anyone who has already tuned their rules keeps them.
+     *
      * @param context The application context.
      * @param type The routing preset type.
      * @return A mutable list of RulesetItem.
      */
-    private fun getPresetRoutingRulesets(context: Context, type: RoutingType = RoutingType.WHITE): MutableList<RulesetItem>? {
+    private fun getPresetRoutingRulesets(context: Context, type: RoutingType = RoutingType.WHITE_IRAN): MutableList<RulesetItem>? {
         val assets = Utils.readTextFromAssets(context, type.fileName)
         if (TextUtils.isEmpty(assets)) {
             return null

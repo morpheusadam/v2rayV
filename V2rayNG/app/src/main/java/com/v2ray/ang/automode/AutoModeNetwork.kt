@@ -187,6 +187,7 @@ object AutoModeNetwork {
         onProgress("Fetching the proxy list…")
         val fetched = fetchText(url)
         if (fetched != null) {
+            noteFormat(fetched)
             val parsed = AutoModeProxy.parseList(fetched)
             if (parsed.isNotEmpty()) {
                 onProgress("${parsed.size} proxies to try.")
@@ -197,6 +198,24 @@ object AutoModeNetwork {
         onProgress("Proxy list unreachable — using the copy shipped with the app.")
         val bundled = readAsset(context, ASSET_PROXIES)
         return AutoModeProxy.parseList(bundled)
+    }
+
+    /**
+     * Logs when the published list declares a format this build was not written against.
+     *
+     * The generator stamps every file it publishes with `# format: v1`. Nothing enforces
+     * it — an unknown version still gets parsed, because the alternative is a censored
+     * network finding no proxies at all over a cosmetic change upstream. This is only what
+     * turns that drift from silent into findable in a log.
+     */
+    private fun noteFormat(body: String) {
+        val format = AutoModeProxy.formatOf(body) ?: return
+        if (format != AutoModeProxy.SUPPORTED_FORMAT) {
+            LogUtil.w(
+                AppConfig.TAG,
+                "AutoMode: proxy list declares format $format, this build knows ${AutoModeProxy.SUPPORTED_FORMAT}"
+            )
+        }
     }
 
     /** The bundled snapshot of the subscription list, for when no route to it works. */

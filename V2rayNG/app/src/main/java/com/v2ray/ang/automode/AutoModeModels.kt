@@ -143,6 +143,14 @@ data class AutoModeStore(
 
     /** Whether pressing power with nothing ready should run Auto Mode rather than refuse. */
     var autoRunOnConnect: Boolean = true,
+
+    /**
+     * Whether a connection that stops carrying traffic should move itself to the next
+     * server in the reserve. Off by default, and deliberately: it drops every open
+     * connection when it fires, which is the right trade only for someone who has decided
+     * it is. See [SmartSwitch].
+     */
+    var smartSwitch: Boolean = false,
 )
 
 /** Result of one Auto Mode run, for the summary message. */

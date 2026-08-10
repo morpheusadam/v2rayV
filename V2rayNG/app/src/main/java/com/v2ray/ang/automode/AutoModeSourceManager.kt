@@ -204,6 +204,11 @@ object AutoModeSourceManager {
         save()
     }
 
+    fun setSmartSwitch(enabled: Boolean) {
+        getStore().smartSwitch = enabled
+        save()
+    }
+
     fun setProtocolFilter(protocols: List<String>) {
         getStore().protocolFilter = protocols.toMutableList()
         save()
