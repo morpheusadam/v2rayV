@@ -1,3 +1,4 @@
+# format: v1
 # Proxies that opened a TLS tunnel to raw.githubusercontent.com:443 and returned
 # sixteen bytes of subs/all.txt, within 8 seconds. Nothing else qualifies.
 #

@@ -78,6 +78,7 @@ private fun AutoModeSourcesScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var editingSources by remember { mutableStateOf<String?>(null) }
+    var showAllSources by remember { mutableStateOf(false) }
 
     if (editingSources != null) {
         SourcesEditDialog(
@@ -205,16 +206,47 @@ private fun AutoModeSourcesScreen(
                 HorizontalDivider()
             }
 
+            // The source list is not a list any more. The catalog merges hundreds of links,
+            // and rendering a row for each turned this screen into an endless scroll of
+            // URLs nobody chose and nobody can act on — Auto Mode picks which to use, and
+            // it does that from evidence rather than from what the user can see here.
+            //
+            // What is worth showing is the few that are actually producing. The rest stay
+            // behind a button for anyone who wants to audit them.
             item {
                 SectionHeader(stringResource(R.string.automode_section_stats))
+                Text(
+                    text = stringResource(
+                        R.string.automode_sources_health,
+                        state.sources.size,
+                        state.sources.count { it.enabled },
+                        state.sources.count { it.autoDisabled },
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Spacer(Modifier.height(8.dp))
             }
 
-            items(state.sources, key = { it.url }) { source ->
+            val ranked = state.sources.sortedByDescending { it.score }
+            val shown = if (showAllSources) ranked else ranked.take(TOP_SOURCES_SHOWN)
+
+            items(shown, key = { it.url }) { source ->
                 SourceRow(
                     source = source,
                     onToggle = { enabled -> viewModel.setSourceEnabled(source.url, enabled) },
                 )
                 HorizontalDivider()
+            }
+
+            if (ranked.size > TOP_SOURCES_SHOWN) {
+                item {
+                    TextButton(onClick = { showAllSources = !showAllSources }) {
+                        Text(
+                            if (showAllSources) stringResource(R.string.automode_sources_show_top)
+                            else stringResource(R.string.automode_sources_show_all, ranked.size)
+                        )
+                    }
+                }
             }
 
             item { Spacer(Modifier.height(24.dp)) }
@@ -330,3 +362,13 @@ private fun SourcesEditDialog(
         }
     )
 }
+
+/**
+ * Sources shown before the list is collapsed.
+ *
+ * The catalog merges hundreds of links. Listing them all turned this screen into an endless
+ * scroll of URLs the user did not choose and cannot usefully act on — Auto Mode decides
+ * which to spend a run on, and it decides from measured evidence, not from what is visible
+ * here. Five is enough to see whether anything is producing at all.
+ */
+private const val TOP_SOURCES_SHOWN = 5

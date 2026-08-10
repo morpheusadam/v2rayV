@@ -454,8 +454,11 @@ class AutoModeEngine(
             val url = store.subsUrl.ifBlank { AutoModeNetwork.DEFAULT_SUBS_URL }
 
             val body = AutoModeNetwork.fetchText(url, proxy)
+                // Kept so a later run that cannot reach the network falls back on this
+                // rather than on whatever was compiled into the APK.
+                ?.also { AutoModeNetwork.cacheSubs(context, it) }
                 ?: AutoModeNetwork.bundledSubs(context)?.also {
-                    report("Catalog unreachable — using the copy shipped with the app.")
+                    report("Catalog unreachable — using the last copy this phone fetched.")
                 }
 
             if (body.isNullOrBlank()) {

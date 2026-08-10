@@ -190,7 +190,20 @@ object AutoModeNetwork {
             noteFormat(fetched)
             val parsed = AutoModeProxy.parseList(fetched)
             if (parsed.isNotEmpty()) {
+                // Kept for the next run that cannot reach the network. The list is rebuilt
+                // daily upstream, so today's copy is worth far more than the one compiled
+                // into the APK whenever it was last built.
+                AutoModeCache.put(context, ASSET_PROXIES, fetched)
                 onProgress("${parsed.size} proxies to try.")
+                return parsed
+            }
+        }
+
+        AutoModeCache.get(context, ASSET_PROXIES)?.let { cached ->
+            val parsed = AutoModeProxy.parseList(cached)
+            if (parsed.isNotEmpty()) {
+                val age = AutoModeCache.ageDays(context, ASSET_PROXIES) ?: 0
+                onProgress("Proxy list unreachable — using the copy from $age day(s) ago.")
                 return parsed
             }
         }
@@ -219,7 +232,11 @@ object AutoModeNetwork {
     }
 
     /** The bundled snapshot of the subscription list, for when no route to it works. */
-    fun bundledSubs(context: Context): String? = readAsset(context, ASSET_SUBS)
+    fun bundledSubs(context: Context): String? =
+        AutoModeCache.get(context, ASSET_SUBS) ?: readAsset(context, ASSET_SUBS)
+
+    /** Keeps a catalog that was fetched successfully, for the next run that cannot fetch one. */
+    fun cacheSubs(context: Context, body: String?) = AutoModeCache.put(context, ASSET_SUBS, body)
 
     /**
      * Whether [url] can be fetched without help. A one-byte range request rather than a
