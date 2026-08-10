@@ -67,11 +67,10 @@ fun NoticeCard(
 
                 val action = notice.action
                 if (action != null && action.isUsable) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        TextButton(onClick = onAction) {
-                            Text(text = action.label, style = Securo.Label, color = accent)
-                        }
-                    }
+                    Spacer(Modifier.height(10.dp))
+                    // Same pill as "next connection". An update offer that looks like a
+                    // line of text is an update nobody takes.
+                    SecuroPillButton(text = action.label, onClick = onAction, accent = accent)
                 }
             }
 

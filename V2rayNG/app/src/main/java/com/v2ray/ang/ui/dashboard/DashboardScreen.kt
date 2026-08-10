@@ -116,19 +116,24 @@ fun DashboardScreen(
             // the traffic belongs to throwaway cores, not the tunnel — so the download
             // card borrows the measurement in flight rather than sitting dead through the
             // one part of the app that is visibly working hardest.
+            //
+            // Once connected it goes back to the real download rate even if a run is still
+            // going, because from then on the tunnel's own throughput is the number the
+            // user came to the screen for, and a background refresh is not.
+            val showTestMeter = state.testing && !state.connected
             Row(horizontalArrangement = Arrangement.spacedBy(Securo.CardGap)) {
                 MetricCard(
                     label = stringResource(
-                        if (state.testing) R.string.dashboard_testing else R.string.dashboard_download
+                        if (showTestMeter) R.string.dashboard_testing else R.string.dashboard_download
                     ),
-                    value = if (state.testing) {
+                    value = if (showTestMeter) {
                         formatMeasured(state.testingMbps)
                     } else {
                         formatSpeedValue(state.downSpeed)
                     },
                     unit = "MB/s",
                     accent = Securo.Green,
-                    fraction = if (state.testing) {
+                    fraction = if (showTestMeter) {
                         ratioOf(state.testingMbps, maxOf(state.lineMbps, state.testingMbps))
                     } else {
                         ratio(state.downSpeed, state.peakDown)
@@ -179,7 +184,6 @@ fun DashboardScreen(
             AutoModeCard(
                 running = autoModeRunning,
                 message = autoModeMessage,
-                remaining = autoModeRemaining,
                 reservePosition = state.reservePosition,
                 reserveTotal = state.reserveTotal,
                 onNext = onNextConnection,
@@ -190,7 +194,12 @@ fun DashboardScreen(
             // the countdown — that is the moment the user is actually waiting on something
             // and wants to know how long. The rest of the time it is the notice, which is
             // nearly always nothing at all.
-            if (autoModeRunning) {
+            //
+            // Not while connected, though. A run keeps going after the first acceptable
+            // server in order to refill the reserve, and a clock counting down to a
+            // connection that already happened is telling the user to wait for something
+            // they already have.
+            if (autoModeRunning && !state.connected) {
                 ConnectingCard(
                     stage = autoModeStage,
                     remainingMillis = autoModeRemainingMillis,
@@ -281,7 +290,6 @@ private fun StatusCard(state: DashboardState, onTogglePower: () -> Unit) {
 private fun AutoModeCard(
     running: Boolean,
     message: String,
-    remaining: String,
     reservePosition: Int,
     reserveTotal: Int,
     onNext: () -> Unit,
@@ -294,12 +302,12 @@ private fun AutoModeCard(
                     .weight(1f)
                     .padding(end = 8.dp)
             ) {
+                // No clock here. The countdown card below owns it, and the two disagreed
+                // by a few seconds — this one is the engine's raw projection, that one is
+                // smoothed — which reads as a bug even though neither is wrong. The
+                // progress line underneath already says a run is going.
                 SecuroLabel(
-                    text = if (running) {
-                        stringResource(R.string.dashboard_automode_running, remaining)
-                    } else {
-                        stringResource(R.string.automode_button)
-                    },
+                    text = stringResource(R.string.automode_button),
                     color = Securo.Green,
                 )
                 Spacer(Modifier.height(6.dp))
@@ -315,17 +323,16 @@ private fun AutoModeCard(
             // Disabled while a run is in flight: there is no "next" to move to until it
             // has produced one, and a second run would fight the first over the same
             // scratch groups.
-            TextButton(onClick = onNext, enabled = !running) {
-                Text(
-                    text = if (reserveTotal > 0 && reservePosition > 0) {
-                        stringResource(R.string.dashboard_next_connection_n, reservePosition, reserveTotal)
-                    } else {
-                        stringResource(R.string.dashboard_next_connection)
-                    },
-                    style = Securo.Label,
-                    color = if (running) Securo.TextSecondary else Securo.Green,
-                )
-            }
+            SecuroPillButton(
+                text = if (reserveTotal > 0 && reservePosition > 0) {
+                    stringResource(R.string.dashboard_next_connection_n, reservePosition, reserveTotal)
+                } else {
+                    stringResource(R.string.dashboard_next_connection)
+                },
+                onClick = onNext,
+                enabled = !running,
+                subdued = running,
+            )
             IconButton(onClick = onSettings) {
                 Icon(
                     painter = painterResource(R.drawable.ic_settings_24dp),

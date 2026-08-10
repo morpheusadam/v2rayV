@@ -56,6 +56,41 @@ fun SecuroCard(
     }
 }
 
+/**
+ * A pill that reads as something you press.
+ *
+ * The dashboard is not a Material surface, so it has no Material buttons; the first
+ * attempt at "next connection" was a bare `TextButton`, which on a dark panel full of
+ * labels looked like one more label. A press target has to announce itself — a filled
+ * ground, a border and a shape nothing else on the screen has.
+ *
+ * @param subdued renders it as present but inert, for when pressing it would do nothing.
+ */
+@Composable
+fun SecuroPillButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    accent: Color = Securo.Green,
+    enabled: Boolean = true,
+    subdued: Boolean = false,
+) {
+    val tint = if (enabled && !subdued) accent else Securo.TextSecondary
+    val shape = RoundedCornerShape(percent = 50)
+
+    Box(
+        modifier = modifier
+            .clip(shape)
+            .background(tint.copy(alpha = if (enabled && !subdued) 0.14f else 0.06f))
+            .border(1.dp, tint.copy(alpha = if (enabled && !subdued) 0.55f else 0.25f), shape)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text = text.uppercase(), style = Securo.Label, color = tint)
+    }
+}
+
 @Composable
 fun SecuroLabel(text: String, color: Color = Securo.TextSecondary, modifier: Modifier = Modifier) {
     Text(text = text.uppercase(), style = Securo.Label, color = color, modifier = modifier)
