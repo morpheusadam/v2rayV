@@ -149,6 +149,9 @@
             android:name=".ui.subscription.SubSettingActivity"
             android:exported="false" />
         <activity
+            android:name=".ui.automode.AutoModeSourcesActivity"
+            android:exported="false" />
+        <activity
             android:name=".ui.userasset.UserAssetActivity"
             android:exported="false" />
         <activity
@@ -264,6 +267,16 @@
 
         <service
             android:name=".service.SubscriptionUpdateService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            android:process=":RunSoLibV2RayDaemon">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="test" />
+        </service>
+
+        <service
+            android:name=".service.AutoModeRunService"
             android:exported="false"
             android:foregroundServiceType="specialUse"
             android:process=":RunSoLibV2RayDaemon">

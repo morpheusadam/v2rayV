@@ -237,6 +237,8 @@ fun MainScreen(
                     displayText = displayText,
                     isRunning = isRunning,
                     isDarkTheme = isDarkTheme,
+                    autoMode = uiState.autoMode,
+                    onAutoModeSettings = { onNavigate(MainDestination.AutoMode) },
                     onAction = onAction
                 )
             },

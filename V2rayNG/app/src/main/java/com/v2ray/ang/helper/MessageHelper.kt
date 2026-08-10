@@ -6,8 +6,10 @@ import android.content.Intent
 import android.os.Build
 import androidx.core.content.ContextCompat
 import com.v2ray.ang.AppConfig
+import com.v2ray.ang.dto.AutoModeMessage
 import com.v2ray.ang.dto.SubscriptionUpdateMessage
 import com.v2ray.ang.dto.TestServiceMessage
+import com.v2ray.ang.service.AutoModeRunService
 import com.v2ray.ang.service.CoreTestService
 import com.v2ray.ang.service.SubscriptionUpdateService
 import com.v2ray.ang.util.LogUtil
@@ -102,6 +104,36 @@ object MessageHelper {
             }
         } catch (e: Exception) {
             LogUtil.e(AppConfig.TAG, "Failed to send message to subscription service", e)
+        }
+    }
+
+    /**
+     * Sends a message to the Auto Mode service.
+     *
+     * @param ctx The context.
+     * @param message The Auto Mode message containing the command key.
+     */
+    fun sendMsg2AutoModeService(ctx: Context, message: AutoModeMessage) {
+        try {
+            val intent = Intent()
+            intent.component = ComponentName(ctx, AutoModeRunService::class.java)
+            intent.putExtra("content", message)
+            when (message.key) {
+                AppConfig.MSG_AUTOMODE_START -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        ContextCompat.startForegroundService(ctx, intent)
+                    } else {
+                        ctx.startService(intent)
+                    }
+                }
+
+                // Cancel goes through startService, not stopService: the run has scratch
+                // groups of its own to tear down, so it must be told to wind down rather
+                // than have the process pulled from under it.
+                else -> ctx.startService(intent)
+            }
+        } catch (e: Exception) {
+            LogUtil.e(AppConfig.TAG, "Failed to send message to auto mode service", e)
         }
     }
 

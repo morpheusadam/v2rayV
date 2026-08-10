@@ -61,6 +61,12 @@ interface MainDataSource : Closeable {
     fun cancelAllPing()
     fun testCurrentServerRealPing()
 
+    fun startAutoMode()
+    fun cancelAutoMode()
+
+    /** False when there is nothing for a run to draw on, so the UI can say so up front. */
+    fun hasAutoModeSources(): Boolean
+
     fun syncSubscriptions()
     fun initAssets()
 }

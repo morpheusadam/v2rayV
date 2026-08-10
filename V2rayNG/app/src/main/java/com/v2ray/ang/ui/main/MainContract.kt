@@ -16,7 +16,8 @@ data class MainUiState(
     val locateTarget: LocateTarget? = null,
     val confirmRemove: Boolean = false,
     val doubleColumnDisplay: Boolean = false,
-    val shareQRCodeBitmap: android.graphics.Bitmap? = null
+    val shareQRCodeBitmap: android.graphics.Bitmap? = null,
+    val autoMode: com.v2ray.ang.automode.AutoModeProgress = com.v2ray.ang.automode.AutoModeProgress()
 )
 
 /**
@@ -36,6 +37,7 @@ sealed interface MainAction {
     data object SortByTestResults : MainAction
     data object UpdateSubscriptions : MainAction
     data object ExportAll : MainAction
+    data object ToggleAutoMode : MainAction
 
     data object ImportQRcode : MainAction
     data object ImportClipboard : MainAction

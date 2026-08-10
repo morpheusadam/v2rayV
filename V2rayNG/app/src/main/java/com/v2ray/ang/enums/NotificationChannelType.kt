@@ -18,5 +18,10 @@ enum class NotificationChannelType(
         channelId = "core_test_channel",
         channelName = "Core Test Service",
         notificationId = 12
+    ),
+    AUTO_MODE(
+        channelId = "auto_mode_channel",
+        channelName = "Auto Mode Service",
+        notificationId = 14
     )
 }

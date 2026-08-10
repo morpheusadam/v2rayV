@@ -8,6 +8,9 @@ import androidx.core.content.ContextCompat
 import com.v2ray.ang.AngApplication
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
+import com.v2ray.ang.automode.AutoModeSourceManager
+import com.v2ray.ang.dto.AutoModeMessage
+import com.v2ray.ang.dto.AutoModeProgressMessage
 import com.v2ray.ang.dto.SubscriptionUpdateResult
 import com.v2ray.ang.dto.TestServiceMessage
 import com.v2ray.ang.dto.entities.ProfileItem
@@ -20,6 +23,7 @@ import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.handler.SubscriptionUpdater
 import com.v2ray.ang.helper.MessageHelper
+import com.v2ray.ang.util.JsonUtil
 import com.v2ray.ang.util.LogUtil
 import com.v2ray.ang.util.Utils
 import kotlinx.coroutines.channels.BufferOverflow
@@ -68,6 +72,20 @@ class MainRepository(
 
                 AppConfig.MSG_MEASURE_CONFIG_FINISH -> MainServiceEvent.MeasureConfigFinish(
                     safeIntent.getStringExtra("content")
+                )
+
+                AppConfig.MSG_AUTOMODE_PROGRESS -> {
+                    val progress = JsonUtil.fromJsonSafe(
+                        safeIntent.getStringExtra("content").orEmpty(),
+                        AutoModeProgressMessage::class.java
+                    )
+                    progress?.let {
+                        MainServiceEvent.AutoModeProgress(it.running, it.message, it.remainingMillis)
+                    }
+                }
+
+                AppConfig.MSG_AUTOMODE_FINISH -> MainServiceEvent.AutoModeFinish(
+                    safeIntent.getStringExtra("content").orEmpty()
                 )
 
                 else -> null
@@ -217,6 +235,17 @@ class MainRepository(
     override fun testCurrentServerRealPing() {
         sendMsg2Service(AppConfig.MSG_MEASURE_DELAY, "")
     }
+
+    override fun startAutoMode() {
+        MessageHelper.sendMsg2AutoModeService(app, AutoModeMessage(AppConfig.MSG_AUTOMODE_START))
+    }
+
+    override fun cancelAutoMode() {
+        MessageHelper.sendMsg2AutoModeService(app, AutoModeMessage(AppConfig.MSG_AUTOMODE_CANCEL))
+    }
+
+    override fun hasAutoModeSources(): Boolean =
+        AutoModeSourceManager.reload().sources.any { it.enabled }
 
     override fun syncSubscriptions() {
         SubscriptionUpdater.sync(app)

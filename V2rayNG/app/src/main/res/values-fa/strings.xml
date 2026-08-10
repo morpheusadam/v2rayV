@@ -542,4 +542,27 @@
     <string name="connection_test_empty_message">جزئیاتی در دسترس نیست</string>
     <string name="value_unknown">ناشناخته</string>
 
+    <!-- Auto Mode -->
+    <string name="automode_button">حالت خودکار</string>
+    <string name="automode_running">حالت خودکار در حال اجرا…</string>
+    <string name="automode_stopping">در حال توقف…</string>
+    <string name="automode_failed">حالت خودکار شکست خورد.</string>
+    <string name="automode_settings_title">حالت خودکار</string>
+    <string name="automode_section_sources">منابع اشتراک</string>
+    <string name="automode_section_keep">چند سرور نگه داشته شود</string>
+    <string name="automode_section_protocol">پروتکل</string>
+    <string name="automode_section_country">کشور</string>
+    <string name="automode_section_stats">کارنامهٔ هر منبع</string>
+    <string name="automode_sources_summary">%1$d لینک، %2$d فعال</string>
+    <string name="automode_edit_sources">ویرایش لینک‌ها</string>
+    <string name="automode_edit_sources_hint">هر خط یک لینک. هرچه لینک http نباشد نادیده گرفته می‌شود، پس چسباندن مستقیم از کانال هم کار می‌کند. لینک‌های blob گیت‌هاب خودکار به شکل raw تبدیل می‌شوند.</string>
+    <string name="automode_sources_saved">%1$d لینک ذخیره شد</string>
+    <string name="automode_runs_so_far">تا اینجا %1$d اجرا، هر بار %2$d منبع</string>
+    <string name="automode_keep_count">بهترین %1$d سرور نگه داشته شود</string>
+    <string name="automode_filter_any_hint">اگر هیچ‌کدام انتخاب نشود، همه پذیرفته می‌شوند.</string>
+    <string name="automode_country_hint">با کشوری که ترافیک واقعاً از آن بیرون می‌آید مقایسه می‌شود، نه با برچسب فروشنده. اگر تعداد کافی پیدا نشود، جاهای باقی‌مانده با سریع‌ترین سرورهای هر کشوری پر می‌شود.</string>
+    <string name="automode_acc_settings">تنظیمات حالت خودکار</string>
+    <string name="automode_no_sources">هنوز هیچ منبع اشتراکی ثبت نشده. تنظیمات حالت خودکار را باز کنید و چند لینک بچسبانید.</string>
+    <string name="automode_stop_button">توقف حالت خودکار %1$s</string>
+
 </resources>

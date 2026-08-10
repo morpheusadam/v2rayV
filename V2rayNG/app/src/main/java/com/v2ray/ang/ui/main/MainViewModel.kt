@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
+import com.v2ray.ang.automode.AutoModeProgress
 import com.v2ray.ang.dto.GroupMapItem
 import com.v2ray.ang.dto.LocateTarget
 import com.v2ray.ang.dto.TestServiceMessage
@@ -142,6 +143,29 @@ class MainViewModel(
             is MainServiceEvent.MeasureConfigFinish -> {
                 onTestsFinished()
             }
+
+            is MainServiceEvent.AutoModeProgress -> {
+                _uiState.update {
+                    it.copy(
+                        autoMode = AutoModeProgress(
+                            running = event.running,
+                            message = event.message,
+                            remainingMillis = event.remainingMillis,
+                        )
+                    )
+                }
+            }
+
+            is MainServiceEvent.AutoModeFinish -> {
+                _uiState.update { it.copy(autoMode = AutoModeProgress()) }
+                if (event.message.isNotBlank()) {
+                    toast(event.message)
+                }
+                // A run rewrites the Auto Mode group wholesale, and the group itself may
+                // not have existed before this run, so both the tabs and the list behind
+                // them have to be rebuilt rather than refreshed in place.
+                setupGroupTab(forceRefresh = true)
+            }
         }
     }
 
@@ -170,6 +194,7 @@ class MainViewModel(
             MainAction.SortByTestResults -> sortByTestResultsAsync()
             MainAction.UpdateSubscriptions -> importConfigViaSub()
             MainAction.ExportAll -> exportAllAsync()
+            MainAction.ToggleAutoMode -> toggleAutoMode()
             is MainAction.SelectGroup -> subscriptionIdChanged(action.groupId)
             is MainAction.SelectServer -> updateSelectedGuid(action.guid)
             is MainAction.RemoveServer -> removeServerAndRefresh(action.guid)
@@ -667,6 +692,35 @@ class MainViewModel(
                 isTesting = false,
                 statusText = if (it.isRunning) connectedText else disconnectedText
             )
+        }
+    }
+
+    /**
+     * Same button starts and stops a run. Stopping is a request rather than a kill: the
+     * service still has to unwind its scratch groups.
+     */
+    private fun toggleAutoMode() {
+        if (uiState.value.autoMode.running) {
+            dataSource.cancelAutoMode()
+            return
+        }
+
+        viewModelScope.launch(ioDispatcher) {
+            if (!dataSource.hasAutoModeSources()) {
+                toastError(R.string.automode_no_sources)
+                return@launch
+            }
+            // Ping tests and a run would fight over the same cores and the same radio.
+            dataSource.cancelAllPing()
+            dataSource.startAutoMode()
+            _uiState.update {
+                it.copy(
+                    autoMode = AutoModeProgress(
+                        running = true,
+                        message = dataSource.getString(R.string.automode_running),
+                    )
+                )
+            }
         }
     }
 

@@ -1,0 +1,732 @@
+package com.v2ray.ang.automode
+
+import android.content.Context
+import com.v2ray.ang.AppConfig
+import com.v2ray.ang.dto.RealPingEvent
+import com.v2ray.ang.dto.UrlContentRequest
+import com.v2ray.ang.dto.entities.ProfileItem
+import com.v2ray.ang.dto.entities.SubscriptionItem
+import com.v2ray.ang.enums.EConfigType
+import com.v2ray.ang.handler.AngConfigManager
+import com.v2ray.ang.handler.MmkvManager
+import com.v2ray.ang.service.RealPingWorkerService
+import com.v2ray.ang.util.HttpUtil
+import com.v2ray.ang.util.LogUtil
+import com.v2ray.ang.util.Utils
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
+import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.resume
+import kotlin.math.max
+import kotlin.math.min
+
+/**
+ * One button press: fetch a few subscription sources, find the servers that actually
+ * work, and leave the best ones in a dedicated group.
+ *
+ * The funnel is deliberately adaptive rather than fixed-width. Measured against a real
+ * source list, only ~5% of TCP-reachable endpoints survive a real tunnel test, and that
+ * rate swings with which sources happen to be healthy this week — so the real-ping stage
+ * keeps pulling batches until it has enough survivors or spends its budget, instead of
+ * testing a guessed number of candidates.
+ *
+ * Two findings from the same measurement are baked in:
+ *  - TCP reachability is used only to drop dead endpoints, never to rank. Ranking by
+ *    lowest tcping performed *worse* than random (2.1% vs 7.5% pass), because the
+ *    fastest-answering hosts are CDN edges fronting dead proxies.
+ *  - Which sources a run spends itself on matters far more than which configs it picks,
+ *    which is why source selection is a decayed Thompson sampler.
+ *
+ * The stage budgets below are smaller than the desktop client's. A desktop run can spend
+ * five minutes and a hundred watts; a phone run competes with the screen timeout, the
+ * battery and one radio that every concurrent test has to share.
+ */
+class AutoModeEngine(
+    private val context: Context,
+    private val onProgress: (String) -> Unit = {},
+    private val onEstimate: (Long) -> Unit = {},
+) {
+
+    companion object {
+        /** Group holding the surviving best servers. Fixed id so runs find it again. */
+        const val TOP_GROUP_ID = "automode-top"
+
+        const val TOP_GROUP_REMARKS = "⚡ Auto Mode"
+
+        /**
+         * Prefix for a run's scratch groups. One group per source, so a server's
+         * subscriptionId says exactly which link produced it — attribution with no
+         * guesswork. All of them are deleted once the run picks its winners.
+         */
+        private const val POOL_GROUP_PREFIX = "automode-pool-"
+
+        /** Configs imported per run. Kept modest so the profile store stays small. */
+        private const val MAX_POOL_SIZE = 900
+
+        /** Cap on the cheap liveness stage. */
+        private const val MAX_TCPING = 800
+
+        /** Real-ping batch size. */
+        private const val REAL_PING_BATCH = 100
+
+        /** Upper bound on real-ping tests when survivors are scarce. */
+        private const val MAX_REAL_PING = 400
+
+        /**
+         * Rounds of real-ping per run. Bounded so a run with poor sources still finishes
+         * in a predictable time rather than grinding through the whole live pool.
+         */
+        private const val MAX_REAL_PING_ROUNDS = 4
+
+        /**
+         * New servers taken into the speed-test stage, on top of the champions. Each one
+         * costs a core start plus a real download, so this is the most expensive stage
+         * per server by a wide margin.
+         */
+        private const val MAX_SPEED_TEST = 10
+
+        /** Existing top-list servers re-tested each run so they can defend a slot. */
+        private const val MAX_CHAMPIONS_RETESTED = 8
+
+        /** Beyond this a server is unusable however fast it downloads. */
+        private const val MAX_ACCEPTABLE_DELAY = 2500L
+
+        /** Rough seconds one speed test costs, for the countdown. */
+        private const val SPEED_TEST_SECONDS = 8.0
+
+        private const val FETCH_CONCURRENCY = 6
+        private const val FETCH_TIMEOUT_MILLIS = 15_000
+    }
+
+    private val stopped = AtomicBoolean(false)
+
+    fun stop() {
+        stopped.set(true)
+    }
+
+    private fun isStopped(): Boolean = stopped.get()
+
+    suspend fun run(): AutoModeRunResult = withContext(Dispatchers.IO) {
+        val result = AutoModeRunResult()
+        var sources: List<AutoModeSource> = emptyList()
+        var fetched: Map<String, FetchResult> = emptyMap()
+        var poolBySource: Map<String, List<ServerRef>> = emptyMap()
+        val realPingTested = mutableSetOf<String>()
+        var workingIds: Set<String> = emptySet()
+        var winnerIds: Set<String> = emptySet()
+        var bestSpeedBySource: Map<String, Double> = emptyMap()
+
+        try {
+            val store = AutoModeSourceManager.getStore()
+            if (store.sources.isEmpty()) {
+                result.message = "No subscription sources. Open the list beside the button and paste some links."
+                report(result.message)
+                return@withContext result
+            }
+
+            store.runCount++
+            store.lastRunMillis = System.currentTimeMillis()
+
+            sources = AutoModeSourceManager.selectSources()
+            result.sourcesUsed = sources.size
+            report("Auto Mode: run #${store.runCount}, trying ${sources.size} of ${store.sources.size} sources.")
+
+            // ---- fetch -------------------------------------------------------------
+            fetched = fetchSources(sources)
+            result.fetched = fetched.count { !it.value.failed }
+            if (result.fetched == 0) {
+                result.message = "No source could be downloaded. Check the connection."
+                report(result.message)
+                return@withContext result
+            }
+            report("Downloaded ${result.fetched} of ${sources.size} sources.")
+
+            if (isStopped()) return@withContext cancelled(result)
+
+            // ---- import candidates -------------------------------------------------
+            poolBySource = importCandidates(sources, fetched)
+
+            // The downloaded bodies are megabytes each and nothing after this point reads
+            // them — only the hash and the failure flag.
+            fetched = fetched.mapValues { it.value.copy(text = "") }
+
+            var candidates = poolBySource.values.flatten()
+            val beforeFilter = candidates.size
+            candidates = applyFilters(candidates, store)
+            result.candidates = candidates.size
+
+            report(
+                if (candidates.size == beforeFilter) "Imported ${candidates.size} candidate servers."
+                else "Imported $beforeFilter candidates, ${candidates.size} match the filter."
+            )
+            if (candidates.isEmpty()) {
+                result.message = "Sources downloaded but contained no usable server."
+                report(result.message)
+                return@withContext result
+            }
+
+            if (isStopped()) return@withContext cancelled(result)
+
+            // ---- liveness (drop dead endpoints; never used for ranking) -------------
+            // First projection, from the work now known to be ahead. The later stages
+            // replace it with figures measured from this device and this network.
+            estimateSeconds(
+                (min(candidates.size, MAX_TCPING) / 40.0)
+                    + (REAL_PING_BATCH * MAX_REAL_PING_ROUNDS / 12.0)
+                    + (MAX_SPEED_TEST * SPEED_TEST_SECONDS)
+            )
+
+            val live = tcpingStage(candidates)
+            result.tcpAlive = live.size
+            report("${live.size} of ${min(candidates.size, MAX_TCPING)} endpoints answered.")
+            if (live.isEmpty()) {
+                result.message = "No endpoint answered."
+                report(result.message)
+                return@withContext result
+            }
+
+            if (isStopped()) return@withContext cancelled(result)
+
+            // ---- real ping: the stage that actually proves a proxy works ------------
+            val target = max(store.topCount * 2, 12)
+            val working = realPingStage(live, target, realPingTested)
+            workingIds = working.map { it.guid }.toSet()
+            result.realPingOk = working.size
+            report("${working.size} servers completed a real request through the tunnel.")
+
+            // Champions from the previous run are re-tested rather than grandfathered,
+            // so a server that has since died loses its slot on its own.
+            val champions = loadGroup(TOP_GROUP_ID)
+            val speedInput = mergeForSpeedTest(working, champions)
+
+            if (speedInput.isEmpty()) {
+                result.message =
+                    "Nothing survived the tunnel test this run. Try again — different sources are sampled each time."
+                report(result.message)
+                return@withContext result
+            }
+
+            if (isStopped()) return@withContext cancelled(result)
+
+            // ---- speed test --------------------------------------------------------
+            val measurements = speedTestStage(speedInput)
+            result.speedTested = measurements.size
+
+            // ---- keep the best -----------------------------------------------------
+            val winners = selectWinners(measurements, store)
+            winnerIds = winners.map { it.guid }.toSet()
+            result.topCount = winners.size
+
+            bestSpeedBySource = bestSpeedPerSource(poolBySource, measurements)
+
+            publishWinners(winners)
+            AutoModeSourceManager.adaptSourceCount(store, working.size, target)
+
+            result.success = winners.isNotEmpty()
+            result.message = if (winners.isNotEmpty()) {
+                "Auto Mode done: ${winners.size} servers kept in \"$TOP_GROUP_REMARKS\"."
+            } else {
+                "Auto Mode found no server fast enough to keep."
+            }
+            report(result.message)
+            return@withContext result
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            LogUtil.e(AppConfig.TAG, "AutoMode: run failed", e)
+            result.message = "Auto Mode failed: ${e.message ?: e.javaClass.simpleName}"
+            report(result.message)
+            return@withContext result
+        } finally {
+            // Runs even when a stage bailed out, so the scratch groups never survive a
+            // run and the source health always reflects what actually happened.
+            try {
+                finishSources(sources, fetched, poolBySource, realPingTested, workingIds, winnerIds, bestSpeedBySource)
+                AutoModeSourceManager.save()
+                cleanupPools()
+            } catch (e: Exception) {
+                LogUtil.e(AppConfig.TAG, "AutoMode: cleanup failed", e)
+            }
+        }
+    }
+
+    private fun cancelled(result: AutoModeRunResult): AutoModeRunResult {
+        result.message = "Auto Mode stopped."
+        return result
+    }
+
+    //region stages
+
+    private data class FetchResult(val text: String, val hash: String?, val failed: Boolean)
+
+    /** A profile plus the guid it was stored under, which is what every stage keys on. */
+    data class ServerRef(val guid: String, val profile: ProfileItem)
+
+    private suspend fun fetchSources(sources: List<AutoModeSource>): Map<String, FetchResult> = coroutineScope {
+        val gate = Semaphore(FETCH_CONCURRENCY)
+        sources.map { source ->
+            async {
+                gate.withPermit {
+                    val fetch = try {
+                        val text = HttpUtil.getUrlContent(
+                            UrlContentRequest(url = HttpUtil.toIdnUrl(source.url), timeout = FETCH_TIMEOUT_MILLIS)
+                        )
+                        if (text.isNullOrBlank()) {
+                            FetchResult("", null, true)
+                        } else {
+                            FetchResult(text, md5(text), false)
+                        }
+                    } catch (e: Exception) {
+                        LogUtil.e(AppConfig.TAG, "AutoMode: fetch failed for ${source.url}", e)
+                        FetchResult("", null, true)
+                    }
+                    source.url to fetch
+                }
+            }
+        }.awaitAll().toMap()
+    }
+
+    /**
+     * Turn the downloaded bodies into profiles, one scratch group per source. Each source
+     * gets an equal quota so one huge list cannot crowd out the rest, and the quota is
+     * filled by random sampling — the "try a few of them each time" behaviour, and also
+     * the only selection shown to beat ranking by latency.
+     */
+    private fun importCandidates(
+        sources: List<AutoModeSource>,
+        fetched: Map<String, FetchResult>,
+    ): Map<String, List<ServerRef>> {
+        val result = linkedMapOf<String, List<ServerRef>>()
+        val usable = sources.filter { fetched[it.url]?.failed == false && fetched[it.url]?.text.isNullOrBlank() == false }
+        if (usable.isEmpty()) {
+            return result
+        }
+
+        val quota = max(40, MAX_POOL_SIZE / usable.size)
+
+        usable.forEachIndexed { index, source ->
+            val poolId = "$POOL_GROUP_PREFIX$index"
+            ensureGroup(poolId, "pool ${index + 1}")
+
+            val raw = fetched[source.url]?.text.orEmpty()
+            val body = Utils.decode(raw).takeIf { it.isNotBlank() } ?: raw
+            val uris = extractUris(body)
+
+            // Not a URI list — Clash YAML, SIP008 JSON and friends. Hand the whole body
+            // to the existing parser rather than trying to sample it.
+            val payload = if (uris.isEmpty()) {
+                stripSubscriptionUrls(raw)
+            } else {
+                uris.shuffled().take(quota).joinToString("\n")
+            }
+
+            if (payload.isBlank()) {
+                result[source.url] = emptyList()
+                return@forEachIndexed
+            }
+
+            // append = false clears whatever the previous run left in this group.
+            val (_, subsImported) = AngConfigManager.importBatchConfig(payload, poolId, false)
+            if (subsImported > 0) {
+                LogUtil.w(AppConfig.TAG, "AutoMode: ${source.url} added $subsImported subscriptions unexpectedly")
+            }
+
+            result[source.url] = loadGroup(poolId)
+        }
+
+        return result
+    }
+
+    /**
+     * Narrow the candidate pool to what the user asked for.
+     *
+     * Protocol is exact — it comes from the parsed config. Country is not: at this point
+     * the only evidence is the remark the provider wrote, which is a claim rather than a
+     * measurement. So a country filter is applied here only to decide what is worth
+     * spending tests on, and is checked again against the measured exit country when the
+     * winners are chosen. Candidates whose remark says nothing about a country are kept
+     * rather than dropped — an unlabelled server in the right country is still a good
+     * server, and the measurement will settle it.
+     */
+    private fun applyFilters(candidates: List<ServerRef>, store: AutoModeStore): List<ServerRef> {
+        var filtered = candidates
+
+        if (store.protocolFilter.isNotEmpty()) {
+            val wanted = store.protocolFilter.map { it.uppercase() }.toSet()
+            filtered = filtered.filter { wanted.contains(it.profile.configType.name.uppercase()) }
+        }
+
+        if (store.countryFilter.isNotEmpty()) {
+            val wanted = store.countryFilter.map { it.uppercase() }.toSet()
+            val labelled = filtered.map { it to CountryHint.fromRemark(it.profile.remarks) }
+
+            // Prefer the ones that claim the right country, then top up with unlabelled
+            // ones so a filter never starves the run of anything to test.
+            val matching = labelled.filter { it.second != null && wanted.contains(it.second) }.map { it.first }
+            val unlabelled = labelled.filter { it.second == null }.map { it.first }
+            filtered = matching + unlabelled
+        }
+
+        return filtered
+    }
+
+    private val uriSchemes: List<String> by lazy {
+        EConfigType.entries.map { it.protocolScheme }.filter { it.isNotBlank() }.distinct()
+    }
+
+    /**
+     * Drop lines that are bare subscription links.
+     *
+     * `AngConfigManager.importBatchConfig` treats any line that looks like a subscription
+     * URL as one to *add*, and then updates every subscription the user has. Plenty of
+     * free sources are exactly that — a list of other people's links — so without this a
+     * run would quietly fill the user's subscription list with whatever it happened to
+     * fetch, and trigger a full refresh of everything while it was at it.
+     *
+     * Structured bodies are unharmed: a URL inside YAML or JSON is preceded by a key or a
+     * quote, so it is never a bare URL on a line of its own.
+     */
+    fun stripSubscriptionUrls(body: String): String =
+        body.lineSequence()
+            .filterNot { Utils.isValidSubUrl(it.trim()) }
+            .joinToString("\n")
+
+    private fun extractUris(body: String): List<String> {
+        return body.lineSequence()
+            .map { it.trim() }
+            .filter { line -> line.length > 12 && uriSchemes.any { line.startsWith(it, ignoreCase = true) } }
+            .toList()
+    }
+
+    /**
+     * Drop endpoints that answer nothing. The resulting delays are deliberately *not*
+     * used to order the next stage: measured pass rate for the lowest-tcping candidates
+     * was 2.1% against 7.5% for a random draw from the same pool.
+     */
+    private suspend fun tcpingStage(candidates: List<ServerRef>): List<ServerRef> {
+        val subset = if (candidates.size > MAX_TCPING) candidates.shuffled().take(MAX_TCPING) else candidates
+        val delays = runPingBatch(subset.map { it.guid }, onlyTcp = true)
+        return subset.filter { (delays[it.guid] ?: -1L) > 0 }
+    }
+
+    /**
+     * Keep testing batches until enough servers have proven they tunnel, or the budget
+     * runs out. Batches are drawn in random order for the reason above.
+     */
+    private suspend fun realPingStage(
+        live: List<ServerRef>,
+        target: Int,
+        testedIds: MutableSet<String>,
+    ): List<ServerRef> {
+        var queue = live.shuffled()
+        val working = mutableListOf<ServerRef>()
+        var tested = 0
+        var round = 0
+
+        while (queue.isNotEmpty() && tested < MAX_REAL_PING && working.size < target
+            && round < MAX_REAL_PING_ROUNDS && !isStopped()
+        ) {
+            round++
+            val batch = queue.take(REAL_PING_BATCH)
+            queue = queue.drop(batch.size)
+
+            val batchStarted = System.currentTimeMillis()
+            val delays = runPingBatch(batch.map { it.guid }, onlyTcp = false)
+            val batchSeconds = (System.currentTimeMillis() - batchStarted) / 1000.0
+
+            tested += batch.size
+            batch.forEach { testedIds.add(it.guid) }
+
+            working.addAll(batch.filter { (delays[it.guid] ?: -1L) in 1..MAX_ACCEPTABLE_DELAY })
+
+            report("  tunnel test $tested/${min(live.size, MAX_REAL_PING)} — ${working.size} working so far.")
+
+            // Now that a batch has been timed, project from that instead of the prior:
+            // how many rounds are still likely, plus the speed test that follows them.
+            val roundsLeft = if (working.size >= target) 0 else max(0, MAX_REAL_PING_ROUNDS - round)
+            estimateSeconds(
+                (roundsLeft * batchSeconds) + (min(working.size + target, MAX_SPEED_TEST) * SPEED_TEST_SECONDS)
+            )
+        }
+
+        return working
+    }
+
+    /**
+     * The current champions plus this run's survivors, deduplicated by endpoint so a
+     * server that reappears in a fresh fetch cannot occupy two slots.
+     *
+     * Champions go in first and are never squeezed out by the newcomer cap: a slot is
+     * only lost by being beaten in the same speed test, not by arriving earlier. Without
+     * that, a run turning up plenty of mediocre servers would silently evict a fast one
+     * that was still working.
+     */
+    fun mergeForSpeedTest(working: List<ServerRef>, champions: List<ServerRef>): List<ServerRef> {
+        val merged = mutableListOf<ServerRef>()
+        val seen = mutableSetOf<String>()
+
+        fun add(items: List<ServerRef>, limit: Int) {
+            var added = 0
+            for (item in items) {
+                if (added >= limit) return
+                if (item.profile.configType == EConfigType.CUSTOM) continue
+                if ((item.profile.serverPort?.toIntOrNull() ?: 0) <= 0) continue
+                if (seen.add(endpointKey(item.profile))) {
+                    merged.add(item)
+                    added++
+                }
+            }
+        }
+
+        add(champions, MAX_CHAMPIONS_RETESTED)
+        add(working, MAX_SPEED_TEST)
+        return merged
+    }
+
+    private fun endpointKey(item: ProfileItem): String =
+        "${item.configType}|${item.server}|${item.serverPort}|${item.password}"
+
+    /**
+     * Serial by design: two downloads racing over one radio measure the radio, not the
+     * servers.
+     */
+    private suspend fun speedTestStage(input: List<ServerRef>): List<AutoModeMeasurement> {
+        val measurements = mutableListOf<AutoModeMeasurement>()
+
+        input.forEachIndexed { index, ref ->
+            if (isStopped() || !currentCoroutineContext().isActive) {
+                return@forEachIndexed
+            }
+            report("Speed testing ${index + 1}/${input.size}: ${ref.profile.remarks.take(40)}")
+            estimateSeconds((input.size - index) * SPEED_TEST_SECONDS)
+
+            val measurement = AutoModeSpeedTester.measure(context, ref.guid)
+            if (measurement != null) {
+                // The delay stages already proved this one tunnels; carry that number
+                // forward rather than paying for it twice.
+                measurement.delayMillis = MmkvManager.decodeServerAffiliationInfo(ref.guid)?.testDelayMillis ?: -1
+                measurements.add(measurement)
+            }
+        }
+
+        return measurements
+    }
+
+    fun selectWinners(measured: List<AutoModeMeasurement>, store: AutoModeStore): List<AutoModeMeasurement> {
+        val scored = measured
+            .filter { it.speedMbps > 0 && it.delayMillis in 1..MAX_ACCEPTABLE_DELAY }
+            .sortedWith(compareByDescending<AutoModeMeasurement> { it.speedMbps }.thenBy { it.delayMillis })
+
+        if (store.countryFilter.isEmpty()) {
+            return scored.take(store.topCount)
+        }
+
+        val wanted = store.countryFilter.map { it.uppercase() }.toSet()
+        // Where the traffic actually came out, measured through the tunnel. Falls back to
+        // the provider's label only when no measurement exists.
+        val inCountry = scored.filter {
+            val country = it.exitCountry ?: CountryHint.fromRemark(it.profile.remarks)
+            country != null && wanted.contains(country)
+        }
+
+        // Filling the remaining slots from outside the wanted countries beats handing back
+        // a half-empty list; the ones that do match are still ranked first.
+        val winners = inCountry.take(store.topCount).toMutableList()
+        if (winners.size < store.topCount) {
+            winners.addAll(scored.filter { m -> inCountry.none { it.guid == m.guid } }.take(store.topCount - winners.size))
+        }
+
+        return winners
+    }
+
+    /**
+     * Move the winners into the top group and label them with their measured numbers,
+     * then clear out whatever used to be there.
+     */
+    private fun publishWinners(winners: List<AutoModeMeasurement>) {
+        if (winners.isEmpty()) {
+            return
+        }
+
+        ensureGroup(TOP_GROUP_ID, TOP_GROUP_REMARKS)
+
+        val previous = MmkvManager.decodeServerList(TOP_GROUP_ID).toSet()
+
+        val keptGuids = mutableListOf<String>()
+        winners.forEachIndexed { index, winner ->
+            val profile = winner.profile.copy(
+                subscriptionId = TOP_GROUP_ID,
+                remarks = "#${index + 1} ${formatSpeed(winner.speedMbps)} · ${winner.delayMillis}ms · ${stripRank(winner.profile.remarks)}",
+            )
+
+            // A champion keeps the guid it already had. Minting a fresh one every run
+            // would delete the entry the user has selected — and, if the tunnel is up,
+            // the one it is currently running on — every few minutes.
+            //
+            // A new winner still lives in a scratch group that is about to be deleted
+            // wholesale, so it is copied out under a guid of its own rather than moved.
+            val guid = if (previous.contains(winner.guid)) winner.guid else Utils.getUuid()
+            MmkvManager.encodeServerConfig(guid, profile)
+            MmkvManager.encodeServerTestDelayMillis(guid, winner.delayMillis)
+            keptGuids.add(guid)
+        }
+
+        // Written in one go so the group is never observed half-replaced, then the
+        // entries that lost their slot are dropped.
+        MmkvManager.encodeServerList(keptGuids.toMutableList(), TOP_GROUP_ID)
+        previous.filterNot { keptGuids.contains(it) }.forEach { MmkvManager.removeServer(it) }
+    }
+
+    private fun formatSpeed(mbPerSecond: Double): String =
+        if (mbPerSecond <= 0) "?" else String.format(java.util.Locale.US, "%.1fMB/s", mbPerSecond)
+
+    private val rankRegex = Regex("^#\\d+\\s+\\S+\\s+·\\s+-?\\d+ms\\s+·\\s+(.*)$")
+
+    /** Strip a label this engine added on a previous run before re-labelling. */
+    fun stripRank(remarks: String?): String {
+        val text = remarks.orEmpty()
+        return rankRegex.find(text)?.groupValues?.get(1) ?: text
+    }
+
+    //endregion stages
+
+    //region helpers
+
+    /**
+     * Runs one batch of delay tests and waits for all of them, which is what lets the
+     * pipeline decide what to do next. [RealPingWorkerService] is callback-shaped because
+     * upstream drives it from a notification, so it is bridged to a suspend point here.
+     */
+    private suspend fun runPingBatch(guids: List<String>, onlyTcp: Boolean): Map<String, Long> {
+        if (guids.isEmpty()) {
+            return emptyMap()
+        }
+
+        return suspendCancellableCoroutine { cont ->
+            val results = java.util.concurrent.ConcurrentHashMap<String, Long>()
+            val worker = RealPingWorkerService(
+                context = context,
+                guids = guids,
+                onlyTcp = onlyTcp,
+                onEvent = { event ->
+                    when (event) {
+                        is RealPingEvent.Result -> {
+                            results[event.guid] = event.delayMillis
+                            MmkvManager.encodeServerTestDelayMillis(event.guid, event.delayMillis)
+                        }
+
+                        is RealPingEvent.Finish -> {
+                            if (cont.isActive) {
+                                cont.resume(HashMap(results))
+                            }
+                        }
+
+                        is RealPingEvent.Progress -> Unit
+                    }
+                }
+            )
+            cont.invokeOnCancellation { worker.cancel() }
+            worker.start()
+        }
+    }
+
+    private fun ensureGroup(id: String, remarks: String) {
+        if (MmkvManager.decodeSubscription(id) != null) {
+            return
+        }
+        MmkvManager.encodeSubscription(
+            id,
+            SubscriptionItem(
+                remarks = remarks,
+                url = "",
+                // Never touched by a normal "update all subscriptions" run.
+                enabled = false,
+            )
+        )
+    }
+
+    private fun loadGroup(subId: String): List<ServerRef> =
+        MmkvManager.decodeServerList(subId).mapNotNull { guid ->
+            val profile = MmkvManager.decodeServerConfig(guid) ?: return@mapNotNull null
+            if (profile.configType == EConfigType.CUSTOM) return@mapNotNull null
+            if ((profile.serverPort?.toIntOrNull() ?: 0) <= 0) return@mapNotNull null
+            ServerRef(guid, profile)
+        }
+
+    private fun bestSpeedPerSource(
+        poolBySource: Map<String, List<ServerRef>>,
+        measurements: List<AutoModeMeasurement>,
+    ): Map<String, Double> {
+        val speedByGuid = measurements.associate { it.guid to it.speedMbps }
+        return poolBySource.mapValues { (_, refs) ->
+            refs.mapNotNull { speedByGuid[it.guid] }.maxOrNull() ?: 0.0
+        }
+    }
+
+    /**
+     * Attribute this run's outcomes back to the sources that produced them. Every
+     * candidate still carries the scratch group it was imported into, so which link
+     * produced which working server is exact rather than inferred.
+     */
+    private fun finishSources(
+        sources: List<AutoModeSource>,
+        fetched: Map<String, FetchResult>,
+        poolBySource: Map<String, List<ServerRef>>,
+        realPingTestedIds: Set<String>,
+        workingIds: Set<String>,
+        winnerIds: Set<String>,
+        bestSpeedBySource: Map<String, Double>,
+    ) {
+        for (source in sources) {
+            val fetch = fetched[source.url]
+            if (fetch == null || fetch.failed) {
+                AutoModeSourceManager.applyResult(source, 0, 0, 0, true, null, 0, 0.0)
+                continue
+            }
+
+            val mine = poolBySource[source.url].orEmpty()
+            val tested = mine.count { realPingTestedIds.contains(it.guid) }
+            val ok = mine.count { workingIds.contains(it.guid) }
+            val won = mine.count { winnerIds.contains(it.guid) }
+
+            AutoModeSourceManager.applyResult(
+                source, tested, ok, won, false, fetch.hash, mine.size, bestSpeedBySource[source.url] ?: 0.0
+            )
+        }
+    }
+
+    /**
+     * Drop every scratch group and the several hundred servers in it. Winners have
+     * already been copied out, so nothing worth keeping is lost.
+     */
+    private fun cleanupPools() {
+        MmkvManager.decodeSubscriptions()
+            .filter { it.guid.startsWith(POOL_GROUP_PREFIX) }
+            .forEach { MmkvManager.removeSubscription(it.guid) }
+    }
+
+    private fun report(message: String) {
+        LogUtil.i(AppConfig.TAG, "AutoMode: $message")
+        onProgress(message)
+    }
+
+    private fun estimateSeconds(seconds: Double) {
+        onEstimate(max(0.0, seconds * 1000).toLong())
+    }
+
+    private fun md5(text: String): String =
+        MessageDigest.getInstance("MD5").digest(text.toByteArray())
+            .joinToString("") { "%02x".format(it) }
+
+    //endregion helpers
+}

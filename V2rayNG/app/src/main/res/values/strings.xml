@@ -542,4 +542,27 @@
     <string name="connection_test_empty_message">no details available</string>
     <string name="value_unknown">unknown</string>
 
+    <!-- Auto Mode -->
+    <string name="automode_button">Auto Mode</string>
+    <string name="automode_running">Auto Mode running…</string>
+    <string name="automode_stopping">Stopping…</string>
+    <string name="automode_failed">Auto Mode failed.</string>
+    <string name="automode_settings_title">Auto Mode</string>
+    <string name="automode_section_sources">Subscription sources</string>
+    <string name="automode_section_keep">How many to keep</string>
+    <string name="automode_section_protocol">Protocol</string>
+    <string name="automode_section_country">Country</string>
+    <string name="automode_section_stats">Per-source record</string>
+    <string name="automode_sources_summary">%1$d links, %2$d in use</string>
+    <string name="automode_edit_sources">Edit links</string>
+    <string name="automode_edit_sources_hint">One link per line. Anything that is not an http link is ignored, so pasting straight from a channel works. GitHub blob links are rewritten to their raw form.</string>
+    <string name="automode_sources_saved">%1$d links saved</string>
+    <string name="automode_runs_so_far">%1$d runs so far, sampling %2$d sources per run</string>
+    <string name="automode_keep_count">Keep the best %1$d servers</string>
+    <string name="automode_filter_any_hint">Select none for any.</string>
+    <string name="automode_country_hint">Matched against the address a server actually exits from, measured during the test. If too few match, the remaining slots are filled with the fastest found anywhere.</string>
+    <string name="automode_acc_settings">Auto Mode settings</string>
+    <string name="automode_no_sources">No subscription sources yet. Open Auto Mode settings and paste some links.</string>
+    <string name="automode_stop_button">Stop Auto Mode %1$s</string>
+
 </resources>
