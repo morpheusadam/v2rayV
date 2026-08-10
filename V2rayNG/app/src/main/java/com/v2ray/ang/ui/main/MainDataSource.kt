@@ -9,6 +9,20 @@ import com.v2ray.ang.dto.entities.SubscriptionItem
 import kotlinx.coroutines.flow.Flow
 import java.io.Closeable
 
+/** One read of everything the dashboard shows about the selected server. */
+data class DashboardServerInfo(
+    /** MB/s this connection manages on its own. */
+    val lineMbps: Double = 0.0,
+    /** MB/s the selected server managed through the tunnel. */
+    val vpnMbps: Double = 0.0,
+    /** Exit country measured for it, ISO code. */
+    val country: String? = null,
+    /** 1-based position in the reserve, or 0 when it is not one of them. */
+    val reservePosition: Int = 0,
+    val reserveTotal: Int = 0,
+    val remarks: String = "",
+)
+
 interface MainDataSource : Closeable {
     val mainServiceEvent: Flow<MainServiceEvent>
 
@@ -77,10 +91,13 @@ interface MainDataSource : Closeable {
     fun scheduleAutoModeRefresh()
 
     /**
-     * The two measured throughputs for the dashboard, in MB/s: this connection on its own,
-     * and [guid] through the tunnel. Either is zero when it has not been measured.
+     * Everything the dashboard needs to know about the selected server, read in one pass.
+     *
+     * Gathered together because each part of it used to reload and re-parse the whole Auto
+     * Mode store separately, and the reserve lookup decodes every profile in it — three
+     * times the disk and JSON work, on whatever thread happened to ask.
      */
-    fun measuredSpeeds(guid: String?): Pair<Double, Double>
+    fun dashboardServerInfo(guid: String?): DashboardServerInfo
 
     /** Opens a URL in whatever the user browses with. */
     fun openUri(url: String)
@@ -90,6 +107,10 @@ interface MainDataSource : Closeable {
 
     /** Downloads an update and raises Android's install dialog. */
     suspend fun installUpdate(url: String): com.v2ray.ang.notice.NoticeInstaller.Result
+
+    /** The server after [guid] in the reserve, or that the reserve is used up. */
+    fun nextReserveServer(guid: String?): com.v2ray.ang.automode.AutoModeReserve.Next
+
 
     /**
      * Country and address the traffic is coming out of, asked through the running tunnel.

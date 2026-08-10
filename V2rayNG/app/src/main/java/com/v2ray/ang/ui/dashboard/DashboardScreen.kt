@@ -19,6 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,7 +48,7 @@ fun DashboardScreen(
     autoModeRemainingMillis: Long,
     autoModeStage: com.v2ray.ang.automode.AutoModeStage,
     onTogglePower: () -> Unit,
-    onToggleAutoMode: () -> Unit,
+    onNextConnection: () -> Unit,
     onAutoModeSettings: () -> Unit,
     onOpenServers: () -> Unit,
     onOpenMenu: () -> Unit,
@@ -161,7 +162,12 @@ fun DashboardScreen(
                     modifier = Modifier.weight(1f),
                 )
                 MetricCard(
-                    label = stringResource(R.string.dashboard_vpn_speed),
+                    // The flag rides on this card's label rather than getting a card of
+                    // its own: "through VPN" and "which country the VPN comes out in" are
+                    // one fact, and splitting them would cost a box to say half of it.
+                    label = countryFlag(state.serverCountry)?.let {
+                        "$it  ${stringResource(R.string.dashboard_vpn_speed)}"
+                    } ?: stringResource(R.string.dashboard_vpn_speed),
                     value = formatMeasured(state.vpnMbps),
                     unit = "MB/s",
                     accent = Securo.Green,
@@ -174,9 +180,10 @@ fun DashboardScreen(
                 running = autoModeRunning,
                 message = autoModeMessage,
                 remaining = autoModeRemaining,
-                onToggle = onToggleAutoMode,
+                reservePosition = state.reservePosition,
+                reserveTotal = state.reserveTotal,
+                onNext = onNextConnection,
                 onSettings = onAutoModeSettings,
-                onOpenServers = onOpenServers,
             )
 
             // One slot, two tenants. While a run is finding a server the space belongs to
@@ -264,15 +271,21 @@ private fun StatusCard(state: DashboardState, onTogglePower: () -> Unit) {
 /**
  * Auto Mode lives on the dashboard rather than in a menu: it is the one control that
  * changes what the power button will connect to.
+ *
+ * One button and one gear. The row used to carry three icons — run, settings, server list
+ * — which asked the user to know the difference between them. What they actually want when
+ * a connection disappoints is the next one, so that is the button; the run it may trigger
+ * is a consequence rather than a thing to choose.
  */
 @Composable
 private fun AutoModeCard(
     running: Boolean,
     message: String,
     remaining: String,
-    onToggle: () -> Unit,
+    reservePosition: Int,
+    reserveTotal: Int,
+    onNext: () -> Unit,
     onSettings: () -> Unit,
-    onOpenServers: () -> Unit,
 ) {
     SecuroCard(modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -299,28 +312,24 @@ private fun AutoModeCard(
                 )
             }
 
-            IconButton(onClick = onToggle) {
-                Icon(
-                    painter = painterResource(
-                        if (running) R.drawable.ic_stop_24dp else R.drawable.ic_play_24dp
-                    ),
-                    contentDescription = stringResource(R.string.automode_button),
-                    tint = Securo.Green,
-                    modifier = Modifier.size(24.dp),
+            // Disabled while a run is in flight: there is no "next" to move to until it
+            // has produced one, and a second run would fight the first over the same
+            // scratch groups.
+            TextButton(onClick = onNext, enabled = !running) {
+                Text(
+                    text = if (reserveTotal > 0 && reservePosition > 0) {
+                        stringResource(R.string.dashboard_next_connection_n, reservePosition, reserveTotal)
+                    } else {
+                        stringResource(R.string.dashboard_next_connection)
+                    },
+                    style = Securo.Label,
+                    color = if (running) Securo.TextSecondary else Securo.Green,
                 )
             }
             IconButton(onClick = onSettings) {
                 Icon(
                     painter = painterResource(R.drawable.ic_settings_24dp),
                     contentDescription = stringResource(R.string.automode_acc_settings),
-                    tint = Securo.TextSecondary,
-                    modifier = Modifier.size(22.dp),
-                )
-            }
-            IconButton(onClick = onOpenServers) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_subscriptions_24dp),
-                    contentDescription = stringResource(R.string.dashboard_open_servers),
                     tint = Securo.TextSecondary,
                     modifier = Modifier.size(22.dp),
                 )

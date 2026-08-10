@@ -579,6 +579,9 @@
     <string name="dashboard_testing">Testing</string>
     <string name="notice_dismiss">Dismiss</string>
     <string name="dashboard_connecting_in">Connecting in</string>
+    <string name="dashboard_next_connection">Next connection</string>
+    <string name="dashboard_next_connection_n">Next · %1$d/%2$d</string>
+    <string name="dashboard_reserve_exhausted">That was the last one — searching for fresh servers.</string>
     <string name="stage_measuring">Measuring your line</string>
     <string name="stage_routing">Finding a route</string>
     <string name="stage_fetching">Fetching sources</string>

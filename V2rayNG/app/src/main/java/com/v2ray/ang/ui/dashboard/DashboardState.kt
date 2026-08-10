@@ -50,6 +50,19 @@ data class DashboardState(
      * installed app can still be told about an update.
      */
     val notice: com.v2ray.ang.notice.Notice? = null,
+
+    /**
+     * Country of the *selected* server, as an ISO code.
+     *
+     * Distinct from [country], which is measured through a live tunnel and therefore only
+     * exists while connected. This one comes from what Auto Mode measured when it tested
+     * the server, so the flag is there before the tunnel is up and survives it going down.
+     */
+    val serverCountry: String? = null,
+
+    /** Where the selected server sits in the reserve, 1-based, and how many there are. */
+    val reservePosition: Int = 0,
+    val reserveTotal: Int = 0,
 ) {
     /** Peak seen this session, which is what the meters are scaled against. */
     val peakDown: Long get() = downSamples.maxOrNull() ?: 0L

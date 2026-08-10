@@ -540,7 +540,14 @@ class AutoModeEngine(
      * was 2.1% against 7.5% for a random draw from the same pool.
      */
     private suspend fun tcpingStage(candidates: List<ServerRef>): List<ServerRef> {
-        val subset = if (candidates.size > MAX_TCPING) candidates.shuffled().take(MAX_TCPING) else candidates
+        // Which candidates get a slot is decided by protocol and country — prior evidence
+        // read off the config, not a measurement — and randomised within each tier. The
+        // *results* are still used only to drop the dead, never to order what follows.
+        val subset = if (candidates.size > MAX_TCPING) {
+            AutoModeRanker.prioritise(candidates) { it.profile }.take(MAX_TCPING)
+        } else {
+            candidates
+        }
         val delays = runPingBatch(subset.map { it.guid }, onlyTcp = true)
         return subset.filter { (delays[it.guid] ?: -1L) > 0 }
     }
@@ -554,7 +561,9 @@ class AutoModeEngine(
         target: Int,
         testedIds: MutableSet<String>,
     ): List<ServerRef> {
-        var queue = live.shuffled()
+        // Same prior, applied again: the batches that go first are the ones most likely to
+        // contain something that tunnels, so the stage reaches its target in fewer rounds.
+        var queue = AutoModeRanker.prioritise(live) { it.profile }
         val working = mutableListOf<ServerRef>()
         var tested = 0
         var round = 0
@@ -615,7 +624,10 @@ class AutoModeEngine(
         }
 
         add(champions, MAX_CHAMPIONS_RETESTED)
-        add(working, MAX_SPEED_TEST)
+        // The speed test is the most expensive stage by a wide margin — a core start plus
+        // a real download each — so the newcomers that get a slot are the best-scoring
+        // ones rather than whichever happened to survive first.
+        add(AutoModeRanker.prioritise(working) { it.profile }, MAX_SPEED_TEST)
         return merged
     }
 
@@ -693,7 +705,10 @@ class AutoModeEngine(
     fun selectWinners(measured: List<AutoModeMeasurement>, store: AutoModeStore): List<AutoModeMeasurement> {
         val scored = measured
             .filter { it.speedMbps > 0 && it.delayMillis in 1..MAX_ACCEPTABLE_DELAY }
-            .sortedWith(compareByDescending<AutoModeMeasurement> { it.speedMbps }.thenBy { it.delayMillis })
+            // Throughput still decides, but in half-megabyte buckets, so that servers which
+            // measured within noise of each other are separated by country and protocol
+            // rather than by which one happened to catch a better second.
+            .sortedWith { a, b -> AutoModeRanker.compareWinners(a, b) }
 
         if (store.countryFilter.isEmpty()) {
             return scored.take(store.topCount)
@@ -738,7 +753,9 @@ class AutoModeEngine(
 
         val existing = MmkvManager.decodeServerList(TOP_GROUP_ID)
         val previous = existing.toSet()
-        val speeds = AutoModeSourceManager.getStore().speedByGuid
+        val store = AutoModeSourceManager.getStore()
+        val speeds = store.speedByGuid
+        val countries = store.countryByGuid
 
         val keptGuids = mutableListOf<String>()
         winners.forEachIndexed { index, winner ->
@@ -765,6 +782,11 @@ class AutoModeEngine(
             MmkvManager.encodeServerConfig(guid, profile)
             MmkvManager.encodeServerTestDelayMillis(guid, winner.delayMillis)
             speeds[guid] = winner.speedMbps
+            // The measured exit country when there is one, and the provider's claim only
+            // as a fallback — a flag on the dashboard should mean where the traffic came
+            // out, not where a remark said it would.
+            (winner.exitCountry ?: CountryHint.fromRemark(winner.profile.remarks))
+                ?.let { countries[guid] = it }
             keptGuids.add(guid)
         }
 
@@ -776,6 +798,7 @@ class AutoModeEngine(
             // The speeds of evicted servers would otherwise accumulate forever, and would
             // be read back for a guid that no longer names anything.
             speeds.keys.retainAll(keptGuids.toSet())
+            countries.keys.retainAll(keptGuids.toSet())
         } else {
             val merged = (keptGuids + existing).distinct().toMutableList()
             MmkvManager.encodeServerList(merged, TOP_GROUP_ID)

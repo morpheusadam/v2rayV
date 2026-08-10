@@ -123,6 +123,12 @@ data class AutoModeStore(
      */
     var speedByGuid: MutableMap<String, Double> = mutableMapOf(),
 
+    /**
+     * Exit country per kept server, ISO code, as measured through the tunnel rather than
+     * read off the provider's remark. Pruned with the reserve.
+     */
+    var countryByGuid: MutableMap<String, String> = mutableMapOf(),
+
     /** Whether pressing power with nothing ready should run Auto Mode rather than refuse. */
     var autoRunOnConnect: Boolean = true,
 )

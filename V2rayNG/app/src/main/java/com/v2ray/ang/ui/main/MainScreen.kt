@@ -83,7 +83,7 @@ fun MainScreen(
                     autoModeRemainingMillis = uiState.autoMode.remainingMillis,
                     autoModeStage = uiState.autoMode.stage,
                     onTogglePower = { onAction(MainAction.ToggleService) },
-                    onToggleAutoMode = { onAction(MainAction.ToggleAutoMode) },
+                    onNextConnection = { mainViewModel.nextConnection() },
                     onAutoModeSettings = { onNavigate(MainDestination.AutoMode) },
                     onOpenServers = { rootScope.launch { rootPagerState.animateScrollToPage(1) } },
                     onNoticeAction = { mainViewModel.onNoticeAction() },

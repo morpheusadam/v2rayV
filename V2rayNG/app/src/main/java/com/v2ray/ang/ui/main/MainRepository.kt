@@ -8,6 +8,7 @@ import androidx.core.content.ContextCompat
 import com.v2ray.ang.AngApplication
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
+import com.v2ray.ang.automode.AutoModeReserve
 import com.v2ray.ang.automode.AutoModeScheduler
 import com.v2ray.ang.automode.AutoModeSourceManager
 import com.v2ray.ang.dto.AutoModeMessage
@@ -312,11 +313,26 @@ class MainRepository(
     override suspend fun installUpdate(url: String): NoticeInstaller.Result =
         NoticeInstaller.downloadAndInstall(app, url)
 
-    override fun measuredSpeeds(guid: String?): Pair<Double, Double> {
+    override fun nextReserveServer(guid: String?): AutoModeReserve.Next =
+        AutoModeReserve.next(guid)
+
+    override fun dashboardServerInfo(guid: String?): DashboardServerInfo {
         // reload() rather than the cached copy: a run writes its results in the core's
-        // process, so the UI process's copy is stale the moment one finishes.
+        // process, so the UI process's copy is stale the moment one finishes. Done once
+        // here for all of it — this parses the whole store, and the reserve lookup below
+        // decodes every profile in it.
         val store = AutoModeSourceManager.reload()
-        return store.baselineMbps to (guid?.let { store.speedByGuid[it] } ?: 0.0)
+        val reserve = AutoModeReserve.servers()
+        val index = if (guid == null) -1 else reserve.indexOf(guid)
+
+        return DashboardServerInfo(
+            lineMbps = store.baselineMbps,
+            vpnMbps = guid?.let { store.speedByGuid[it] } ?: 0.0,
+            country = guid?.let { store.countryByGuid[it] },
+            reservePosition = if (index >= 0) index + 1 else 0,
+            reserveTotal = reserve.size,
+            remarks = guid?.let { MmkvManager.decodeServerConfig(it)?.remarks }.orEmpty(),
+        )
     }
 
     override fun queryRemoteIpInfo(): String? = SpeedtestManager.getRemoteIPInfo()

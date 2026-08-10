@@ -73,6 +73,8 @@ object AutoModeSourceManager {
                     if (store.countryFilter == null) store.countryFilter = mutableListOf()
                     @Suppress("SENSELESS_COMPARISON")
                     if (store.speedByGuid == null) store.speedByGuid = mutableMapOf()
+                    @Suppress("SENSELESS_COMPARISON")
+                    if (store.countryByGuid == null) store.countryByGuid = mutableMapOf()
                     return store
                 }
             }

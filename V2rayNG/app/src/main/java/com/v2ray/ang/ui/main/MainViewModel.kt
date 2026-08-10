@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
 import com.v2ray.ang.automode.AutoModeProgress
+import com.v2ray.ang.automode.AutoModeReserve
 import com.v2ray.ang.automode.AutoModeStage
 import com.v2ray.ang.automode.CountryHint
 import com.v2ray.ang.notice.NoticeInstaller
@@ -799,20 +800,27 @@ class MainViewModel(
      * user picks a different one — not only when a run finishes.
      */
     fun refreshMeasuredSpeeds() {
-        val guid = dataSource.getSelectServer()
-        val measured = dataSource.measuredSpeeds(guid)
-        val name = guid?.let { dataSource.decodeServerConfig(it)?.remarks }.orEmpty()
-        _uiState.update {
-            it.copy(
-                dashboard = it.dashboard.copy(
-                    lineMbps = measured.first,
-                    vpnMbps = measured.second,
-                    // The header used to be written only when the tunnel changed state, so
-                    // a run that picked a server left it reading "no server selected" until
-                    // something was connected. It names the selection, not the connection.
-                    serverName = name,
+        // Off the main thread on purpose: this parses the whole Auto Mode store and decodes
+        // every profile in the reserve, which is real disk and JSON work and does not
+        // belong on the thread drawing the screen.
+        viewModelScope.launch(ioDispatcher) {
+            val info = dataSource.dashboardServerInfo(dataSource.getSelectServer())
+            _uiState.update {
+                it.copy(
+                    dashboard = it.dashboard.copy(
+                        lineMbps = info.lineMbps,
+                        vpnMbps = info.vpnMbps,
+                        serverCountry = info.country,
+                        reservePosition = info.reservePosition,
+                        reserveTotal = info.reserveTotal,
+                        // The header used to be written only when the tunnel changed state,
+                        // so a run that picked a server left it reading "no server selected"
+                        // until something connected. It names the selection, not the
+                        // connection.
+                        serverName = info.remarks,
+                    )
                 )
-            )
+            }
         }
     }
 
@@ -869,6 +877,43 @@ class MainViewModel(
 
     /** True when the power button can connect right now rather than having to find a server. */
     fun hasReadyServer(): Boolean = dataSource.hasReadyServer()
+
+    /**
+     * Move to the next server Auto Mode kept, or go and find more when they are used up.
+     *
+     * This is the answer to "this connection is no good", and it has to be cheap: the
+     * reserve exists precisely so that the answer is a switch rather than a search. Only
+     * when the user has worked through the whole list does it cost a run — and that they
+     * did is itself the evidence that a run is warranted.
+     */
+    fun nextConnection() {
+        if (uiState.value.autoMode.running) {
+            return
+        }
+
+        viewModelScope.launch(ioDispatcher) {
+            when (val next = dataSource.nextReserveServer(dataSource.getSelectServer())) {
+                is AutoModeReserve.Next.Server -> {
+                    dataSource.setSelectServer(next.guid)
+                    refreshSelectedGuid()
+                    // Restarted rather than merely selected: changing the selection under
+                    // a running tunnel changes nothing the user can feel.
+                    if (uiState.value.isRunning) {
+                        dataSource.startTunnel(next.guid)
+                    }
+                }
+
+                AutoModeReserve.Next.Exhausted -> {
+                    toast(R.string.dashboard_reserve_exhausted)
+                    // Armed, so the fresh run connects on its first acceptable server the
+                    // way a power press would.
+                    pendingAutoConnect = uiState.value.isRunning
+                    startAutoModeRun()
+                }
+            }
+        }
+    }
+
 
     /**
      * The power button pressed with nothing to connect to.
