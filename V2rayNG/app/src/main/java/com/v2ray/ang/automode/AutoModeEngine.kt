@@ -3,14 +3,12 @@ package com.v2ray.ang.automode
 import android.content.Context
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.dto.RealPingEvent
-import com.v2ray.ang.dto.UrlContentRequest
 import com.v2ray.ang.dto.entities.ProfileItem
 import com.v2ray.ang.dto.entities.SubscriptionItem
 import com.v2ray.ang.enums.EConfigType
 import com.v2ray.ang.handler.AngConfigManager
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.service.RealPingWorkerService
-import com.v2ray.ang.util.HttpUtil
 import com.v2ray.ang.util.LogUtil
 import com.v2ray.ang.util.Utils
 import kotlinx.coroutines.CancellationException
@@ -55,6 +53,19 @@ class AutoModeEngine(
     private val context: Context,
     private val onProgress: (String) -> Unit = {},
     private val onEstimate: (Long) -> Unit = {},
+    /**
+     * Fired the moment a server is measured at or above the acceptance threshold, before
+     * the run has finished. The caller connects on this rather than waiting for the full
+     * ranking: a user who pressed a button wants a working tunnel, not the best possible
+     * one, and the difference between the two is several minutes.
+     */
+    private val onFirstAcceptable: (String) -> Unit = {},
+    /**
+     * Live throughput while a measurement is in flight, in MB/s, with a flag saying whether
+     * it is the user's own line or a server being tested. The dashboard shows the needle
+     * moving instead of a card that sits at zero for the length of the run.
+     */
+    private val onSpeedSample: (Double, Boolean) -> Unit = { _, _ -> },
 ) {
 
     companion object {
@@ -105,10 +116,16 @@ class AutoModeEngine(
         private const val SPEED_TEST_SECONDS = 8.0
 
         private const val FETCH_CONCURRENCY = 6
-        private const val FETCH_TIMEOUT_MILLIS = 15_000
     }
 
     private val stopped = AtomicBoolean(false)
+
+    /**
+     * Pool guid to the guid it was published under, so the final ranking rewrites the
+     * early winner's entry instead of replacing it with a copy and deleting the original
+     * out from under a live tunnel.
+     */
+    private val publishedGuids = mutableMapOf<String, String>()
 
     fun stop() {
         stopped.set(true)
@@ -125,24 +142,45 @@ class AutoModeEngine(
         var workingIds: Set<String> = emptySet()
         var winnerIds: Set<String> = emptySet()
         var bestSpeedBySource: Map<String, Double> = emptyMap()
+        var proxy: AutoModeProxy? = null
+        var baselineMbps = AutoModeBaseline.UNKNOWN
+        var acceptThreshold = 0.0
 
         try {
             val store = AutoModeSourceManager.getStore()
-            if (store.sources.isEmpty()) {
-                result.message = "No subscription sources. Open the list beside the button and paste some links."
+            store.runCount++
+            store.lastRunMillis = System.currentTimeMillis()
+
+            // ---- what is this connection capable of --------------------------------
+            // Measured first because everything after it is a ratio against this number,
+            // including the point at which the run stops looking and connects.
+            baselineMbps = AutoModeBaseline.get(
+                context,
+                onProgress = ::report,
+                onSample = { mbps -> onSpeedSample(mbps, true) },
+            )
+            result.baselineMbps = baselineMbps
+            acceptThreshold = AutoModeBaseline.acceptThreshold(baselineMbps, store)
+
+            if (isStopped()) return@withContext cancelled(result)
+
+            // ---- find a way out, if the direct one is blocked ----------------------
+            proxy = resolveRoute(store)
+
+            // ---- top up the source list from the catalog ---------------------------
+            refreshCatalog(store, proxy)
+            if (store.sources.none { it.enabled }) {
+                result.message = "No usable subscription sources could be reached."
                 report(result.message)
                 return@withContext result
             }
-
-            store.runCount++
-            store.lastRunMillis = System.currentTimeMillis()
 
             sources = AutoModeSourceManager.selectSources()
             result.sourcesUsed = sources.size
             report("Auto Mode: run #${store.runCount}, trying ${sources.size} of ${store.sources.size} sources.")
 
             // ---- fetch -------------------------------------------------------------
-            fetched = fetchSources(sources)
+            fetched = fetchSources(sources, proxy)
             result.fetched = fetched.count { !it.value.failed }
             if (result.fetched == 0) {
                 result.message = "No source could be downloaded. Check the connection."
@@ -219,8 +257,9 @@ class AutoModeEngine(
             if (isStopped()) return@withContext cancelled(result)
 
             // ---- speed test --------------------------------------------------------
-            val measurements = speedTestStage(speedInput)
+            val measurements = speedTestStage(speedInput, acceptThreshold)
             result.speedTested = measurements.size
+            result.acceptedMbps = measurements.firstOrNull { isAcceptable(it, acceptThreshold) }?.speedMbps ?: 0.0
 
             // ---- keep the best -----------------------------------------------------
             val winners = selectWinners(measurements, store)
@@ -233,10 +272,15 @@ class AutoModeEngine(
             AutoModeSourceManager.adaptSourceCount(store, working.size, target)
 
             result.success = winners.isNotEmpty()
-            result.message = if (winners.isNotEmpty()) {
-                "Auto Mode done: ${winners.size} servers kept in \"$TOP_GROUP_REMARKS\"."
-            } else {
-                "Auto Mode found no server fast enough to keep."
+            result.message = when {
+                winners.isEmpty() -> "Auto Mode found no server fast enough to keep."
+                // Naming the line speed the servers were measured against is the
+                // difference between "5.7 MB/s, is that good?" and an answer.
+                baselineMbps > AutoModeBaseline.UNKNOWN ->
+                    "${winners.size} servers ready — best ${formatSpeed(winners.first().speedMbps)} " +
+                        "of your ${AutoModeBaseline.format(baselineMbps)}."
+
+                else -> "Auto Mode done: ${winners.size} servers kept in \"$TOP_GROUP_REMARKS\"."
             }
             report(result.message)
             return@withContext result
@@ -272,15 +316,88 @@ class AutoModeEngine(
     /** A profile plus the guid it was stored under, which is what every stage keys on. */
     data class ServerRef(val guid: String, val profile: ProfileItem)
 
-    private suspend fun fetchSources(sources: List<AutoModeSource>): Map<String, FetchResult> = coroutineScope {
+    /**
+     * Decides how this run will reach the internet: directly if that works, and otherwise
+     * through a public proxy found for the purpose.
+     *
+     * This is the fix for the failure an Iranian tester hit — the run reported "sources
+     * downloaded but contained no usable server" because the fetches had returned a block
+     * page rather than a list. Checking reachability up front turns a silent wrong answer
+     * into a route change, and costs one round trip when the network is open.
+     */
+    private suspend fun resolveRoute(store: AutoModeStore): AutoModeProxy? {
+        val probeUrl = store.subsUrl.ifBlank { AutoModeNetwork.DEFAULT_SUBS_URL }
+
+        if (withContext(Dispatchers.IO) { AutoModeNetwork.reachableDirectly(probeUrl) }) {
+            return null
+        }
+
+        report("Subscription host unreachable — looking for a proxy to fetch through.")
+        val found = AutoModeProxyFinder.ensureProxy(context, probeUrl, ::report)
+        if (found == null) {
+            // Not fatal: the bundled list and any source on a reachable host still work.
+            report("No proxy found. Falling back to whatever can be reached directly.")
+        }
+        return found
+    }
+
+    /**
+     * Pulls the catalog of subscription links and folds it into the source list, so a
+     * fresh install has something to run on without the user pasting anything.
+     *
+     * The catalog is a list of links rather than a list of servers, which is the whole
+     * reason it is handled here instead of being added as an ordinary source: the import
+     * stage deliberately strips bare subscription URLs out of any body it is given, so a
+     * catalog fed through that path yields nothing at all.
+     *
+     * It is still checked for servers, because "point this at a URL" is the obvious thing
+     * to do with the setting and the file on the other end could be either.
+     */
+    private suspend fun refreshCatalog(store: AutoModeStore, proxy: AutoModeProxy?) =
+        withContext(Dispatchers.IO) {
+            val url = store.subsUrl.ifBlank { AutoModeNetwork.DEFAULT_SUBS_URL }
+
+            val body = AutoModeNetwork.fetchText(url, proxy)
+                ?: AutoModeNetwork.bundledSubs(context)?.also {
+                    report("Catalog unreachable — using the copy shipped with the app.")
+                }
+
+            if (body.isNullOrBlank()) {
+                report("Could not reach the subscription catalog.")
+                return@withContext
+            }
+
+            val links = AutoModeSourceManager.parseUrls(body)
+            if (links.isEmpty()) {
+                // Not a catalog after all. Treat it as a source in its own right so a URL
+                // pointing straight at a server list is not silently ignored.
+                if (AutoModeSourceManager.ensureSource(url)) {
+                    report("Catalog holds servers rather than links — added as a source.")
+                }
+                return@withContext
+            }
+
+            val added = AutoModeSourceManager.mergeCatalog(links)
+            report(
+                if (added > 0) "Catalog: $added new links, ${store.sources.size} sources known."
+                else "Catalog: ${store.sources.size} sources known."
+            )
+        }
+
+    private suspend fun fetchSources(
+        sources: List<AutoModeSource>,
+        proxy: AutoModeProxy?,
+    ): Map<String, FetchResult> = coroutineScope {
         val gate = Semaphore(FETCH_CONCURRENCY)
         sources.map { source ->
             async {
                 gate.withPermit {
                     val fetch = try {
-                        val text = HttpUtil.getUrlContent(
-                            UrlContentRequest(url = HttpUtil.toIdnUrl(source.url), timeout = FETCH_TIMEOUT_MILLIS)
-                        )
+                        // Sampled rather than downloaded: a list of tens of millions of
+                        // entries is read as a few random byte windows, so the cost of a
+                        // run does not grow with the size of the source.
+                        val text = AutoModeNetwork.fetchSampled(source.url, proxy)
+
                         if (text.isNullOrBlank()) {
                             FetchResult("", null, true)
                         } else {
@@ -499,9 +616,23 @@ class AutoModeEngine(
     /**
      * Serial by design: two downloads racing over one radio measure the radio, not the
      * servers.
+     *
+     * The first server to reach [acceptThreshold] is published and handed to the caller
+     * immediately, and the stage then keeps going to fill the reserve. This is the
+     * difference between a button that takes four minutes and one that takes twenty
+     * seconds: the remaining tests only improve a list the user is not waiting on, so
+     * making them wait for those is a cost with nothing bought.
+     *
+     * With no baseline the threshold is zero, and the first server that carries any
+     * traffic at all is accepted — worse than a measured bar, still better than making a
+     * user with an unmeasurable connection wait for the whole run.
      */
-    private suspend fun speedTestStage(input: List<ServerRef>): List<AutoModeMeasurement> {
+    private suspend fun speedTestStage(
+        input: List<ServerRef>,
+        acceptThreshold: Double,
+    ): List<AutoModeMeasurement> {
         val measurements = mutableListOf<AutoModeMeasurement>()
+        var accepted = false
 
         input.forEachIndexed { index, ref ->
             if (isStopped() || !currentCoroutineContext().isActive) {
@@ -510,16 +641,44 @@ class AutoModeEngine(
             report("Speed testing ${index + 1}/${input.size}: ${ref.profile.remarks.take(40)}")
             estimateSeconds((input.size - index) * SPEED_TEST_SECONDS)
 
-            val measurement = AutoModeSpeedTester.measure(context, ref.guid)
+            val measurement = AutoModeSpeedTester.measure(context, ref.guid) { mbps ->
+                onSpeedSample(mbps, false)
+            }
             if (measurement != null) {
                 // The delay stages already proved this one tunnels; carry that number
                 // forward rather than paying for it twice.
                 measurement.delayMillis = MmkvManager.decodeServerAffiliationInfo(ref.guid)?.testDelayMillis ?: -1
                 measurements.add(measurement)
+
+                if (!accepted && isAcceptable(measurement, acceptThreshold)) {
+                    accepted = true
+                    publishEarlyWinner(measurement)
+                    report(
+                        "Good enough at ${formatSpeed(measurement.speedMbps)} — connecting now, "
+                            + "still filling the reserve."
+                    )
+                }
             }
         }
 
         return measurements
+    }
+
+    fun isAcceptable(measurement: AutoModeMeasurement, acceptThreshold: Double): Boolean =
+        measurement.speedMbps > 0
+            && measurement.delayMillis in 1..MAX_ACCEPTABLE_DELAY
+            && measurement.speedMbps >= acceptThreshold
+
+    /**
+     * Puts one server into the top group so it can be connected to right away.
+     *
+     * Written through the same path the final ranking uses, so the guid it lands on is the
+     * guid it keeps when the run finishes and rewrites the group. Without that the user
+     * would be connected to a profile the end of the run then deleted.
+     */
+    private fun publishEarlyWinner(winner: AutoModeMeasurement) {
+        val guids = publishWinners(listOf(winner), replaceGroup = false)
+        guids.firstOrNull()?.let(onFirstAcceptable)
     }
 
     fun selectWinners(measured: List<AutoModeMeasurement>, store: AutoModeStore): List<AutoModeMeasurement> {
@@ -550,17 +709,27 @@ class AutoModeEngine(
     }
 
     /**
-     * Move the winners into the top group and label them with their measured numbers,
-     * then clear out whatever used to be there.
+     * Move the winners into the top group and label them with their measured numbers.
+     *
+     * @param replaceGroup true for the run's final ranking, which also drops the entries
+     *        that lost their slot. False for the early winner published mid-run, which is
+     *        added to the group without disturbing what is already in it — the run is not
+     *        finished and has no standing to evict anything yet.
+     * @return the guids the winners were published under, in order.
      */
-    private fun publishWinners(winners: List<AutoModeMeasurement>) {
+    private fun publishWinners(
+        winners: List<AutoModeMeasurement>,
+        replaceGroup: Boolean = true,
+    ): List<String> {
         if (winners.isEmpty()) {
-            return
+            return emptyList()
         }
 
         ensureGroup(TOP_GROUP_ID, TOP_GROUP_REMARKS)
 
-        val previous = MmkvManager.decodeServerList(TOP_GROUP_ID).toSet()
+        val existing = MmkvManager.decodeServerList(TOP_GROUP_ID)
+        val previous = existing.toSet()
+        val speeds = AutoModeSourceManager.getStore().speedByGuid
 
         val keptGuids = mutableListOf<String>()
         winners.forEachIndexed { index, winner ->
@@ -569,22 +738,42 @@ class AutoModeEngine(
                 remarks = "#${index + 1} ${formatSpeed(winner.speedMbps)} · ${winner.delayMillis}ms · ${stripRank(winner.profile.remarks)}",
             )
 
-            // A champion keeps the guid it already had. Minting a fresh one every run
-            // would delete the entry the user has selected — and, if the tunnel is up,
-            // the one it is currently running on — every few minutes.
+            // Three ways a guid can be settled, in order of precedence:
             //
-            // A new winner still lives in a scratch group that is about to be deleted
-            // wholesale, so it is copied out under a guid of its own rather than moved.
-            val guid = if (previous.contains(winner.guid)) winner.guid else Utils.getUuid()
+            //  - It was already published earlier in this run, as the early winner. That
+            //    entry is very likely the one the tunnel is now running on, so the final
+            //    ranking must land on the same guid rather than mint a second copy and
+            //    delete the live one.
+            //  - It is a champion from a previous run, which keeps its guid for the same
+            //    reason across runs.
+            //  - It is new, and still lives in a scratch group about to be deleted
+            //    wholesale, so it is copied out under a guid of its own.
+            val guid = publishedGuids[winner.guid]
+                ?: winner.guid.takeIf { previous.contains(it) }
+                ?: Utils.getUuid()
+            publishedGuids[winner.guid] = guid
+
             MmkvManager.encodeServerConfig(guid, profile)
             MmkvManager.encodeServerTestDelayMillis(guid, winner.delayMillis)
+            speeds[guid] = winner.speedMbps
             keptGuids.add(guid)
         }
 
-        // Written in one go so the group is never observed half-replaced, then the
-        // entries that lost their slot are dropped.
-        MmkvManager.encodeServerList(keptGuids.toMutableList(), TOP_GROUP_ID)
-        previous.filterNot { keptGuids.contains(it) }.forEach { MmkvManager.removeServer(it) }
+        if (replaceGroup) {
+            // Written in one go so the group is never observed half-replaced, then the
+            // entries that lost their slot are dropped.
+            MmkvManager.encodeServerList(keptGuids.toMutableList(), TOP_GROUP_ID)
+            previous.filterNot { keptGuids.contains(it) }.forEach { MmkvManager.removeServer(it) }
+            // The speeds of evicted servers would otherwise accumulate forever, and would
+            // be read back for a guid that no longer names anything.
+            speeds.keys.retainAll(keptGuids.toSet())
+        } else {
+            val merged = (keptGuids + existing).distinct().toMutableList()
+            MmkvManager.encodeServerList(merged, TOP_GROUP_ID)
+        }
+
+        AutoModeSourceManager.save()
+        return keptGuids
     }
 
     private fun formatSpeed(mbPerSecond: Double): String =

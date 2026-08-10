@@ -30,17 +30,12 @@ import java.util.concurrent.TimeUnit
  *
  * Tests are deliberately run one at a time by the caller: two downloads racing over one
  * radio measure the radio rather than the servers.
+ *
+ * The download itself lives in [ThroughputProbe], which also measures the user's own line.
+ * The two results are compared as a ratio, so they must be the same measurement rather
+ * than merely similar ones.
  */
 object AutoModeSpeedTester {
-
-    /** Big enough that the measurement is not dominated by TCP slow start. */
-    private const val DOWNLOAD_URL = "https://speed.cloudflare.com/__down?bytes=50000000"
-
-    /** Stop reading at this point and divide by the time actually spent. */
-    private const val MAX_DOWNLOAD_MILLIS = 6_000L
-
-    /** A server that has not delivered a byte by now is not worth the remaining budget. */
-    private const val FIRST_BYTE_TIMEOUT_MILLIS = 4_000
 
     /** Give the core a moment to bind the inbound before dialling into it. */
     private const val CORE_START_TIMEOUT_MILLIS = 3_000L
@@ -50,15 +45,17 @@ object AutoModeSpeedTester {
 
     private const val LOOPBACK = "127.0.0.1"
 
-    private const val BUFFER_SIZE = 32 * 1024
-
     /**
      * Runs one server through a download and an exit-country lookup.
      *
      * @return the measurement, with [AutoModeMeasurement.speedMbps] left at zero when the
      *         server could not carry the download at all.
      */
-    fun measure(context: Context, guid: String): AutoModeMeasurement? {
+    fun measure(
+        context: Context,
+        guid: String,
+        onSample: (Double) -> Unit = {},
+    ): AutoModeMeasurement? {
         val profile = MmkvManager.decodeServerConfig(guid) ?: return null
         val measurement = AutoModeMeasurement(guid = guid, profile = profile)
 
@@ -75,7 +72,9 @@ object AutoModeSpeedTester {
             }
 
             val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress(LOOPBACK, port))
-            measurement.speedMbps = downloadThroughput(proxy)
+            // Shared with the baseline measurement on purpose — the two numbers are
+            // divided by one another, so they have to be the same measurement.
+            measurement.speedMbps = ThroughputProbe.measure(proxy, onSample)
             // Only worth a round trip when the tunnel proved it carries traffic.
             if (measurement.speedMbps > 0) {
                 measurement.exitCountry = CountryHint.fromIpInfo(lookupIpInfo(proxy))
@@ -139,57 +138,6 @@ object AutoModeSpeedTester {
             }
         }
         return controller.isRunning
-    }
-
-    /**
-     * Reads for at most [MAX_DOWNLOAD_MILLIS] and reports MB/s over the time actually
-     * spent reading, so a server that is cut off halfway is still scored on what it did
-     * deliver rather than being failed outright.
-     */
-    private fun downloadThroughput(proxy: Proxy): Double {
-        val client = OkHttpClient.Builder()
-            .proxy(proxy)
-            .connectTimeout(FIRST_BYTE_TIMEOUT_MILLIS.toLong(), TimeUnit.MILLISECONDS)
-            .readTimeout(FIRST_BYTE_TIMEOUT_MILLIS.toLong(), TimeUnit.MILLISECONDS)
-            .callTimeout(MAX_DOWNLOAD_MILLIS + FIRST_BYTE_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
-            .retryOnConnectionFailure(false)
-            .build()
-
-        val request = Request.Builder()
-            .url(DOWNLOAD_URL)
-            .get()
-            .header("Connection", "close")
-            .build()
-
-        return try {
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    return 0.0
-                }
-                val body = response.body
-
-                val buffer = ByteArray(BUFFER_SIZE)
-                var total = 0L
-                val started = System.nanoTime()
-                val deadline = started + TimeUnit.MILLISECONDS.toNanos(MAX_DOWNLOAD_MILLIS)
-
-                body.byteStream().use { input ->
-                    while (System.nanoTime() < deadline) {
-                        val read = input.read(buffer)
-                        if (read < 0) {
-                            break
-                        }
-                        total += read
-                    }
-                }
-
-                val elapsedSeconds = (System.nanoTime() - started) / 1_000_000_000.0
-                if (total <= 0 || elapsedSeconds <= 0) 0.0 else (total / 1_048_576.0) / elapsedSeconds
-            }
-        } catch (e: Exception) {
-            LogUtil.d(AppConfig.TAG, "AutoMode: download failed: ${e.message}")
-            0.0
-        }
     }
 
     /**
