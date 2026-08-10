@@ -12,6 +12,12 @@ sealed class MainServiceEvent {
     data class MeasureConfigFinish(val finishedCount: String?) : MainServiceEvent()
     data class AutoModeProgress(val running: Boolean, val message: String, val remainingMillis: Long) : MainServiceEvent()
     data class AutoModeFinish(val message: String) : MainServiceEvent()
+
+    /** A run has selected a server that clears the bar, mid-run. */
+    data class AutoModeReady(val guid: String) : MainServiceEvent()
+
+    /** Live throughput from a measurement in flight. */
+    data class AutoModeSpeed(val mbps: Double, val baseline: Boolean) : MainServiceEvent()
     data class TrafficStats(
         val upSpeed: Long,
         val downSpeed: Long,

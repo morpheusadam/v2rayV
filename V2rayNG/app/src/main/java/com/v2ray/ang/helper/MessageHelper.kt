@@ -119,7 +119,7 @@ object MessageHelper {
             intent.component = ComponentName(ctx, AutoModeRunService::class.java)
             intent.putExtra("content", message)
             when (message.key) {
-                AppConfig.MSG_AUTOMODE_START -> {
+                AppConfig.MSG_AUTOMODE_START, AppConfig.MSG_AUTOMODE_REFRESH -> {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         ContextCompat.startForegroundService(ctx, intent)
                     } else {

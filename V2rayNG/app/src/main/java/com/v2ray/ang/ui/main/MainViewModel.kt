@@ -88,6 +88,14 @@ class MainViewModel(
     @Volatile
     private var testingGroupId: String? = null
 
+    /**
+     * Set when a run was started by the power button rather than by the Auto Mode button,
+     * so the tunnel is brought up on the first acceptable server the run reports. A run
+     * the user started deliberately leaves this false and only refreshes the list.
+     */
+    @Volatile
+    private var pendingAutoConnect: Boolean = false
+
     private val initialPageReady = CompletableDeferred<Unit>()
 
     // ---------- Service events ----------
@@ -158,7 +166,23 @@ class MainViewModel(
                             running = event.running,
                             message = event.message,
                             remainingMillis = event.remainingMillis,
-                        )
+                        ),
+                        // The live meter belongs to a run; when the run ends it has nothing
+                        // to show and must not be left holding the last sample.
+                        dashboard = it.dashboard.copy(testing = event.running),
+                    )
+                }
+            }
+
+            is MainServiceEvent.AutoModeSpeed -> {
+                _uiState.update { state ->
+                    val dash = state.dashboard
+                    state.copy(
+                        // Live samples drive the needle only. The two figures on the cards
+                        // are averages over a whole measurement, which a stream of
+                        // instantaneous rates cannot be reduced to here — they are read
+                        // back from the store once the measurement has finished.
+                        dashboard = dash.copy(testing = true, testingMbps = event.mbps)
                     )
                 }
             }
@@ -180,8 +204,25 @@ class MainViewModel(
                 }
             }
 
+            is MainServiceEvent.AutoModeReady -> {
+                // Only when this run was started by the power button. A run the user
+                // started deliberately must not connect the tunnel behind their back.
+                if (pendingAutoConnect && !uiState.value.isRunning) {
+                    pendingAutoConnect = false
+                    dataSource.startTunnel(event.guid)
+                }
+                refreshSelectedGuid()
+            }
+
             is MainServiceEvent.AutoModeFinish -> {
-                _uiState.update { it.copy(autoMode = AutoModeProgress()) }
+                pendingAutoConnect = false
+                _uiState.update {
+                    it.copy(
+                        autoMode = AutoModeProgress(),
+                        dashboard = it.dashboard.copy(testing = false, testingMbps = 0.0),
+                    )
+                }
+                refreshMeasuredSpeeds()
                 if (event.message.isNotBlank()) {
                     toast(event.message)
                 }
@@ -258,6 +299,8 @@ class MainViewModel(
                 delay(32L)
                 dataSource.initAssets()
                 dataSource.syncSubscriptions()
+                dataSource.scheduleAutoModeRefresh()
+                refreshMeasuredSpeeds()
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
@@ -675,10 +718,39 @@ class MainViewModel(
     fun updateSelectedGuid(guid: String) {
         dataSource.setSelectServer(guid)
         _uiState.update { it.copy(selectedGuid = guid) }
+        // The "through VPN" figure belongs to whichever server is selected.
+        refreshMeasuredSpeeds()
     }
 
     fun refreshSelectedGuid() {
         _uiState.update { it.copy(selectedGuid = dataSource.getSelectServer()) }
+        refreshMeasuredSpeeds()
+    }
+
+    /**
+     * Pulls the two measured figures the bottom cards show out of the Auto Mode store.
+     *
+     * Read rather than tracked, for two reasons. Both are averages over a whole download,
+     * which cannot be reconstructed from the stream of instantaneous samples the meter
+     * uses. And the server figure follows the *selected* server, so it changes when the
+     * user picks a different one — not only when a run finishes.
+     */
+    fun refreshMeasuredSpeeds() {
+        val guid = dataSource.getSelectServer()
+        val measured = dataSource.measuredSpeeds(guid)
+        val name = guid?.let { dataSource.decodeServerConfig(it)?.remarks }.orEmpty()
+        _uiState.update {
+            it.copy(
+                dashboard = it.dashboard.copy(
+                    lineMbps = measured.first,
+                    vpnMbps = measured.second,
+                    // The header used to be written only when the tunnel changed state, so
+                    // a run that picked a server left it reading "no server selected" until
+                    // something was connected. It names the selection, not the connection.
+                    serverName = name,
+                )
+            )
+        }
     }
 
     fun removeServerAndRefresh(guid: String) {
@@ -725,15 +797,36 @@ class MainViewModel(
      */
     private fun toggleAutoMode() {
         if (uiState.value.autoMode.running) {
+            pendingAutoConnect = false
             dataSource.cancelAutoMode()
             return
         }
+        startAutoModeRun()
+    }
 
+    /** True when the power button can connect right now rather than having to find a server. */
+    fun hasReadyServer(): Boolean = dataSource.hasReadyServer()
+
+    /**
+     * The power button pressed with nothing to connect to.
+     *
+     * Rather than refusing — which is what the app used to do, and which leaves a new user
+     * with a button that does nothing and no idea why — this runs Auto Mode and connects
+     * on the first server that clears the bar. The run reports its own progress and a
+     * countdown, so the wait is visible rather than a frozen button.
+     */
+    fun connectViaAutoMode() {
+        if (uiState.value.autoMode.running) {
+            // A run is already in flight; just arm the connection for when it reports one.
+            pendingAutoConnect = true
+            return
+        }
+        pendingAutoConnect = true
+        startAutoModeRun()
+    }
+
+    private fun startAutoModeRun() {
         viewModelScope.launch(ioDispatcher) {
-            if (!dataSource.hasAutoModeSources()) {
-                toastError(R.string.automode_no_sources)
-                return@launch
-            }
             // Ping tests and a run would fight over the same cores and the same radio.
             dataSource.cancelAllPing()
             dataSource.startAutoMode()
@@ -838,9 +931,16 @@ class MainViewModel(
                         serverName = currentServerName(),
                     )
                 } else {
-                    // A dropped tunnel invalidates every figure on the dashboard, including
-                    // the exit country — leaving the last reading up would be a lie.
-                    DashboardState(serverName = currentServerName())
+                    // A dropped tunnel invalidates every *live* figure on the dashboard,
+                    // including the exit country — leaving the last reading up would be a
+                    // lie. The two measured ones are not live readings but results of a
+                    // test, and they stay: "this server does 0.7 of your 3.9" is equally
+                    // true whether or not the tunnel happens to be up right now.
+                    DashboardState(
+                        serverName = currentServerName(),
+                        lineMbps = state.dashboard.lineMbps,
+                        vpnMbps = state.dashboard.vpnMbps,
+                    )
                 }
             )
         }

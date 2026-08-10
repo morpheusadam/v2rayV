@@ -576,6 +576,9 @@
     <string name="dashboard_upload">Upload</string>
     <string name="dashboard_downloaded">Downloaded</string>
     <string name="dashboard_uploaded">Uploaded</string>
+    <string name="dashboard_testing">Testing</string>
+    <string name="dashboard_line_speed">Your line</string>
+    <string name="dashboard_vpn_speed">Through VPN</string>
     <string name="dashboard_automode_running">Auto Mode %1$s</string>
     <string name="dashboard_automode_hint">Test your links and keep the fastest servers</string>
     <string name="dashboard_open_servers">Server list</string>

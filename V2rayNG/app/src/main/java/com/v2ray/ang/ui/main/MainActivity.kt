@@ -30,7 +30,6 @@ import com.v2ray.ang.ui.backup.BackupActivity
 import com.v2ray.ang.ui.base.HelperBaseComponentActivity
 import com.v2ray.ang.ui.checkupdate.CheckUpdateActivity
 import com.v2ray.ang.ui.logcat.LogcatActivity
-import com.v2ray.ang.ui.perappproxy.PerAppProxyActivity
 import com.v2ray.ang.ui.routing.RoutingSettingActivity
 import com.v2ray.ang.ui.server.ProfileEditorResult
 import com.v2ray.ang.ui.server.ServerCustomConfigActivity
@@ -61,7 +60,7 @@ class MainActivity : HelperBaseComponentActivity() {
 
     private val requestVpnPermission =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-            if (it.resultCode == RESULT_OK) startV2Ray()
+            if (it.resultCode == RESULT_OK) connectOrFindServer()
         }
 
     private val profileEditorLauncher =
@@ -141,7 +140,6 @@ class MainActivity : HelperBaseComponentActivity() {
         val intent = when (destination) {
             MainDestination.AutoMode -> Intent(this, AutoModeSourcesActivity::class.java)
             MainDestination.Subscriptions -> Intent(this, SubSettingActivity::class.java)
-            MainDestination.PerAppProxy -> Intent(this, PerAppProxyActivity::class.java)
             MainDestination.Routing -> Intent(this, RoutingSettingActivity::class.java)
             MainDestination.UserAssets -> Intent(this, UserAssetActivity::class.java)
             MainDestination.Settings -> Intent(this, SettingsActivity::class.java)
@@ -157,10 +155,28 @@ class MainActivity : HelperBaseComponentActivity() {
         if (mainViewModel.uiState.value.isRunning) {
             LauncherManager.stopService(this)
         } else if (SettingsManager.isVpnMode()) {
+            // The VPN consent dialog needs an Activity, and a run takes long enough that
+            // the user may well have left by the time it finds a server — so consent is
+            // asked for now, before anything is started, rather than at the end.
             val intent = VpnService.prepare(this)
-            if (intent == null) startV2Ray() else requestVpnPermission.launch(intent)
+            if (intent == null) connectOrFindServer() else requestVpnPermission.launch(intent)
         } else {
+            connectOrFindServer()
+        }
+    }
+
+    /**
+     * One press, two paths: connect to the server that is ready, or go and find one.
+     *
+     * Auto Mode leaves a reserve behind precisely so that the second path is rare — it is
+     * the first run on a new install, or a return after every kept server has died. Every
+     * press after that takes the first branch and connects immediately.
+     */
+    private fun connectOrFindServer() {
+        if (mainViewModel.hasReadyServer()) {
             startV2Ray()
+        } else {
+            mainViewModel.connectViaAutoMode()
         }
     }
 

@@ -9,12 +9,16 @@ import androidx.core.app.NotificationCompat
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
 import com.v2ray.ang.automode.AutoModeEngine
+import com.v2ray.ang.automode.AutoModeScheduler
 import com.v2ray.ang.core.CoreNativeManager
+import com.v2ray.ang.core.CoreServiceManager
 import com.v2ray.ang.dto.AutoModeMessage
 import com.v2ray.ang.dto.AutoModeProgressMessage
+import com.v2ray.ang.dto.AutoModeSpeedMessage
 import com.v2ray.ang.enums.NotificationChannelType
 import com.v2ray.ang.extension.serializable
 import com.v2ray.ang.handler.AppLocaleManager
+import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.helper.MessageHelper
 import com.v2ray.ang.helper.NotificationHelper
 import com.v2ray.ang.util.JsonUtil
@@ -91,10 +95,38 @@ class AutoModeRunService : Service() {
 
         when (message.key) {
             AppConfig.MSG_AUTOMODE_START -> handleStart()
+            AppConfig.MSG_AUTOMODE_REFRESH -> handleScheduledRefresh(startId)
             AppConfig.MSG_AUTOMODE_CANCEL -> handleCancel()
             else -> stopSelf(startId)
         }
         return START_NOT_STICKY
+    }
+
+    /**
+     * A refresh nobody asked for has to earn the right to run. It is declined when the
+     * tunnel is up — a run starts a dozen throwaway cores and saturates the radio, which
+     * a user mid-stream would feel — and when the reserve is still healthy, because the
+     * point of the schedule is to keep the reserve stocked, not to keep it churning.
+     *
+     * Both checks live here rather than in the worker because this is the core's process,
+     * the only one where the core's state can be read without loading the native library
+     * into the UI.
+     */
+    private fun handleScheduledRefresh(startId: Int) {
+        if (CoreServiceManager.isRunning()) {
+            LogUtil.i(AppConfig.TAG, "AutoMode: tunnel is up, skipping scheduled refresh")
+            stopSelf(startId)
+            return
+        }
+        if (!AutoModeScheduler.isReserveLow()) {
+            LogUtil.i(
+                AppConfig.TAG,
+                "AutoMode: reserve holds ${AutoModeScheduler.reserveSize()}, skipping scheduled refresh"
+            )
+            stopSelf(startId)
+            return
+        }
+        handleStart()
     }
 
     private fun handleStart() {
@@ -129,6 +161,20 @@ class AutoModeRunService : Service() {
             onEstimate = { remaining ->
                 lastRemainingMillis = remaining
                 publishProgress(true, lastMessage, remaining)
+            },
+            onSpeedSample = { mbps, baseline ->
+                MessageHelper.sendMsg2UI(
+                    this,
+                    AppConfig.MSG_AUTOMODE_SPEED,
+                    JsonUtil.toJson(AutoModeSpeedMessage(mbps, baseline))
+                )
+            },
+            onFirstAcceptable = { guid ->
+                // Selecting here rather than in the UI process: the run already owns this
+                // decision, and the store is multi-process, so a UI that is not on screen
+                // does not stop the tunnel from becoming connectable.
+                MmkvManager.setSelectServer(guid)
+                MessageHelper.sendMsg2UI(this, AppConfig.MSG_AUTOMODE_READY, guid)
             }
         )
         engine = runEngine

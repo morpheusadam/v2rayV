@@ -8,9 +8,11 @@ import androidx.core.content.ContextCompat
 import com.v2ray.ang.AngApplication
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
+import com.v2ray.ang.automode.AutoModeScheduler
 import com.v2ray.ang.automode.AutoModeSourceManager
 import com.v2ray.ang.dto.AutoModeMessage
 import com.v2ray.ang.dto.AutoModeProgressMessage
+import com.v2ray.ang.dto.AutoModeSpeedMessage
 import com.v2ray.ang.dto.SubscriptionUpdateResult
 import com.v2ray.ang.dto.TestServiceMessage
 import com.v2ray.ang.dto.TrafficStatsMessage
@@ -18,6 +20,7 @@ import com.v2ray.ang.dto.entities.ProfileItem
 import com.v2ray.ang.dto.entities.ServerAffiliationInfo
 import com.v2ray.ang.dto.entities.SubscriptionCache
 import com.v2ray.ang.dto.entities.SubscriptionItem
+import com.v2ray.ang.core.LauncherManager
 import com.v2ray.ang.handler.AngConfigManager
 import com.v2ray.ang.handler.AppLocaleManager
 import com.v2ray.ang.handler.MmkvManager
@@ -89,6 +92,18 @@ class MainRepository(
                 AppConfig.MSG_AUTOMODE_FINISH -> MainServiceEvent.AutoModeFinish(
                     safeIntent.getStringExtra("content").orEmpty()
                 )
+
+                AppConfig.MSG_AUTOMODE_READY -> MainServiceEvent.AutoModeReady(
+                    safeIntent.getStringExtra("content").orEmpty()
+                )
+
+                AppConfig.MSG_AUTOMODE_SPEED -> {
+                    val sample = JsonUtil.fromJsonSafe(
+                        safeIntent.getStringExtra("content").orEmpty(),
+                        AutoModeSpeedMessage::class.java
+                    )
+                    sample?.let { MainServiceEvent.AutoModeSpeed(it.mbps, it.baseline) }
+                }
 
                 AppConfig.MSG_TRAFFIC_STATS -> {
                     val stats = JsonUtil.fromJsonSafe(
@@ -258,8 +273,30 @@ class MainRepository(
         MessageHelper.sendMsg2AutoModeService(app, AutoModeMessage(AppConfig.MSG_AUTOMODE_CANCEL))
     }
 
-    override fun hasAutoModeSources(): Boolean =
-        AutoModeSourceManager.reload().sources.any { it.enabled }
+    /**
+     * A selected server whose config still decodes. The config check matters because the
+     * previous run deletes the entries that lost their slot, so a selection can outlive
+     * the profile it points at.
+     */
+    override fun hasReadyServer(): Boolean {
+        val guid = MmkvManager.getSelectServer()?.takeIf { it.isNotEmpty() } ?: return false
+        return MmkvManager.decodeServerConfig(guid) != null
+    }
+
+    override fun startTunnel(guid: String) {
+        LauncherManager.startService(app, guid)
+    }
+
+    override fun scheduleAutoModeRefresh() {
+        AutoModeScheduler.schedule(app)
+    }
+
+    override fun measuredSpeeds(guid: String?): Pair<Double, Double> {
+        // reload() rather than the cached copy: a run writes its results in the core's
+        // process, so the UI process's copy is stale the moment one finishes.
+        val store = AutoModeSourceManager.reload()
+        return store.baselineMbps to (guid?.let { store.speedByGuid[it] } ?: 0.0)
+    }
 
     override fun queryRemoteIpInfo(): String? = SpeedtestManager.getRemoteIPInfo()
 

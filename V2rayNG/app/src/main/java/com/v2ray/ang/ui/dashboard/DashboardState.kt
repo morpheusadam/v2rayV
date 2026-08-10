@@ -23,6 +23,26 @@ data class DashboardState(
     val upTotal: Long = 0,
     val downSamples: List<Long> = emptyList(),
     val upSamples: List<Long> = emptyList(),
+
+    /**
+     * The two measured figures the bottom row shows, in MB/s: what this connection does on
+     * its own, and what the selected server does through the tunnel.
+     *
+     * These are results of a test rather than a live rate, so they persist between runs
+     * and survive a disconnection — the question "is this server any good on my line" has
+     * the same answer whether or not the tunnel happens to be up.
+     */
+    val lineMbps: Double = 0.0,
+    val vpnMbps: Double = 0.0,
+
+    /**
+     * A measurement in flight, in MB/s, shown live in the top row while Auto Mode runs.
+     * The tunnel's own counters read zero throughout a run — the traffic belongs to
+     * throwaway cores, not the tunnel — so without this the meters sit dead for minutes
+     * during the one part of the app that is visibly working hardest.
+     */
+    val testingMbps: Double = 0.0,
+    val testing: Boolean = false,
 ) {
     /** Peak seen this session, which is what the meters are scaled against. */
     val peakDown: Long get() = downSamples.maxOrNull() ?: 0L
@@ -51,6 +71,13 @@ fun formatVolumeValue(bytes: Long): String =
     }
 
 fun volumeUnit(bytes: Long): String = if (bytes >= GB) "GB" else "MB"
+
+/**
+ * A measured throughput. An em dash rather than "0.0" when nothing has been measured yet —
+ * a zero reads as "this connection is dead", which is a different claim from "not tested".
+ */
+fun formatMeasured(mbPerSecond: Double): String =
+    if (mbPerSecond <= 0.0) "—" else String.format(Locale.US, "%.1f", mbPerSecond)
 
 /** Elapsed time as hh:mm:ss, which is what the status card shows. */
 fun formatElapsed(millis: Long): String {

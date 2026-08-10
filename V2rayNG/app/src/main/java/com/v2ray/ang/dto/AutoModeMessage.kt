@@ -16,3 +16,14 @@ data class AutoModeProgressMessage(
     val message: String,
     val remainingMillis: Long,
 ) : Serializable
+
+/**
+ * One live throughput sample from a measurement in flight.
+ *
+ * [baseline] separates the two things a run measures: the user's own line, and a server
+ * under test. Only the second is a candidate for the "through VPN" figure.
+ */
+data class AutoModeSpeedMessage(
+    val mbps: Double,
+    val baseline: Boolean,
+) : Serializable

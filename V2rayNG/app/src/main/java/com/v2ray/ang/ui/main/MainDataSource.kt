@@ -64,8 +64,23 @@ interface MainDataSource : Closeable {
     fun startAutoMode()
     fun cancelAutoMode()
 
-    /** False when there is nothing for a run to draw on, so the UI can say so up front. */
-    fun hasAutoModeSources(): Boolean
+    /**
+     * True when a server is selected and usable right now, so pressing power can connect
+     * instead of having to go and find one first.
+     */
+    fun hasReadyServer(): Boolean
+
+    /** Starts the tunnel on [guid], selecting it first. */
+    fun startTunnel(guid: String)
+
+    /** Keeps the periodic run that refills the reserve of ready servers scheduled. */
+    fun scheduleAutoModeRefresh()
+
+    /**
+     * The two measured throughputs for the dashboard, in MB/s: this connection on its own,
+     * and [guid] through the tunnel. Either is zero when it has not been measured.
+     */
+    fun measuredSpeeds(guid: String?): Pair<Double, Double>
 
     /**
      * Country and address the traffic is coming out of, asked through the running tunnel.

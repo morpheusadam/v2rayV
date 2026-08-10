@@ -200,6 +200,23 @@ object AppConfig {
     const val MSG_AUTOMODE_PROGRESS = 92
     const val MSG_AUTOMODE_FINISH = 93
 
+    /**
+     * A run has found a server good enough to use and selected it, while the rest of the
+     * run carries on. Carries the guid, so a press of the power button that started the
+     * run can connect on it instead of waiting for the whole thing to finish.
+     */
+    const val MSG_AUTOMODE_READY = 95
+
+    /**
+     * A scheduled refresh rather than a press. Handled by the same service, which declines
+     * it when the tunnel is up or the reserve is already stocked — decisions that can only
+     * be made in the core's process, where the core's state is readable.
+     */
+    const val MSG_AUTOMODE_REFRESH = 96
+
+    /** Live throughput while a run measures something, so the dashboard meters move. */
+    const val MSG_AUTOMODE_SPEED = 97
+
     const val MSG_TRAFFIC_STATS = 94
 
     /** Notification channel IDs and names. */

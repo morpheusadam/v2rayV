@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.v2ray.ang.R
 
+
 /**
  * The screen the app opens on: is the tunnel up, through where, how fast, how much.
  *
@@ -106,13 +107,27 @@ fun DashboardScreen(
 
             StatusCard(state = state, onTogglePower = onTogglePower)
 
+            // Live rates. While a test is running the tunnel's own counters read zero —
+            // the traffic belongs to throwaway cores, not the tunnel — so the download
+            // card borrows the measurement in flight rather than sitting dead through the
+            // one part of the app that is visibly working hardest.
             Row(horizontalArrangement = Arrangement.spacedBy(Securo.CardGap)) {
                 MetricCard(
-                    label = stringResource(R.string.dashboard_download),
-                    value = formatSpeedValue(state.downSpeed),
+                    label = stringResource(
+                        if (state.testing) R.string.dashboard_testing else R.string.dashboard_download
+                    ),
+                    value = if (state.testing) {
+                        formatMeasured(state.testingMbps)
+                    } else {
+                        formatSpeedValue(state.downSpeed)
+                    },
                     unit = "MB/s",
                     accent = Securo.Green,
-                    fraction = ratio(state.downSpeed, state.peakDown),
+                    fraction = if (state.testing) {
+                        ratioOf(state.testingMbps, maxOf(state.lineMbps, state.testingMbps))
+                    } else {
+                        ratio(state.downSpeed, state.peakDown)
+                    },
                     samples = state.downSamples,
                     modifier = Modifier.weight(1f),
                 )
@@ -127,23 +142,26 @@ fun DashboardScreen(
                 )
             }
 
+            // Measured results rather than live rates: what this line does on its own, and
+            // what the selected server does through it. Shown side by side because neither
+            // means much alone — the pair is the answer to "is this server any good", and
+            // the shared scale makes the shortfall readable without doing the division.
             Row(horizontalArrangement = Arrangement.spacedBy(Securo.CardGap)) {
+                val scale = maxOf(state.lineMbps, state.vpnMbps)
                 MetricCard(
-                    label = stringResource(R.string.dashboard_downloaded),
-                    value = formatVolumeValue(state.downTotal),
-                    unit = volumeUnit(state.downTotal),
-                    accent = Securo.Green,
-                    // Against the session's own larger channel, so the pair reads as a
-                    // split rather than each being scaled to itself.
-                    fraction = ratio(state.downTotal, maxOf(state.downTotal, state.upTotal)),
+                    label = stringResource(R.string.dashboard_line_speed),
+                    value = formatMeasured(state.lineMbps),
+                    unit = "MB/s",
+                    accent = Securo.Violet,
+                    fraction = ratioOf(state.lineMbps, scale),
                     modifier = Modifier.weight(1f),
                 )
                 MetricCard(
-                    label = stringResource(R.string.dashboard_uploaded),
-                    value = formatVolumeValue(state.upTotal),
-                    unit = volumeUnit(state.upTotal),
-                    accent = Securo.Violet,
-                    fraction = ratio(state.upTotal, maxOf(state.downTotal, state.upTotal)),
+                    label = stringResource(R.string.dashboard_vpn_speed),
+                    value = formatMeasured(state.vpnMbps),
+                    unit = "MB/s",
+                    accent = Securo.Green,
+                    fraction = ratioOf(state.vpnMbps, scale),
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -164,6 +182,9 @@ fun DashboardScreen(
 
 private fun ratio(value: Long, max: Long): Float =
     if (max <= 0L) 0f else (value.toFloat() / max.toFloat()).coerceIn(0f, 1f)
+
+private fun ratioOf(value: Double, max: Double): Float =
+    if (max <= 0.0) 0f else (value / max).toFloat().coerceIn(0f, 1f)
 
 @Composable
 private fun StatusCard(state: DashboardState, onTogglePower: () -> Unit) {
