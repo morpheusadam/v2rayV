@@ -49,13 +49,22 @@ class AutoModeEngineTest {
         exitCountry = country,
     )
 
+    /**
+     * Asserted as a set, not a sequence: newcomers go through [AutoModeRanker.prioritise],
+     * which shuffles within a tier on purpose, and "a" and "b" are the same endpoint at
+     * the same tier. Which of the two survives is a coin toss and does not matter — that
+     * one of them does, and that "c" is not crowded out, is the whole claim.
+     */
     @Test
     fun `the same endpoint from two sources only takes one slot`() {
         val merged = engine.mergeForSpeedTest(
             working = listOf(ref("a"), ref("b"), ref("c", server = "5.6.7.8")),
             champions = emptyList()
         )
-        assertEquals(listOf("a", "c"), merged.map { it.guid })
+        val guids = merged.map { it.guid }
+        assertEquals(2, guids.size)
+        assertTrue("expected exactly one of a/b, got $guids", guids.count { it == "a" || it == "b" } == 1)
+        assertTrue("expected c to keep its slot, got $guids", guids.contains("c"))
     }
 
     /**
