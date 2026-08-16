@@ -53,10 +53,11 @@ actually fast enough for you.</b></p>
 ---
 
 > [!NOTE]
-> **Pre-release.** Auto Mode is verified end to end on a real device — power press to
-> connected in about 80 seconds on a cold install. There is no tagged release yet; build from
-> source. The censored-network fallback (CDN mirrors → discovered proxies) compiles and is
-> unit-tested, but has not been exercised on a network that actually blocks GitHub.
+> **Early days.** Auto Mode is verified end to end on a real device — power press to
+> connected in about 80 seconds on a cold install. Signed APKs are on the
+> [Releases](../../releases) page. The censored-network fallback (CDN mirrors → discovered
+> proxies) compiles and is unit-tested, but has not been exercised on a network that actually
+> blocks GitHub.
 
 ## Contents
 
@@ -198,8 +199,12 @@ dismissed all end the same way — an empty slot.
 
 ## Install
 
-No tagged release yet, so building from source is the only route today. When there is one,
-it will be on the [Releases](../../releases) page as an APK.
+Signed APKs are on the [Releases](../../releases) page — one per ABI, plus a `universal`
+build if you are unsure which your phone is. Most phones since about 2018 want `arm64-v8a`.
+Each APK ships with a detached GPG signature and the public key, so a download that came via
+a mirror or a chat app can be checked before it is installed.
+
+Building from source works too, and is covered [below](#building-from-source).
 
 **It installs alongside v2rayNG.** `applicationId` is `com.v2rayv.app`, so it gets its own
 data, its own launcher icon and its own notification mark, and does not disturb an existing
@@ -340,7 +345,9 @@ build it yourself; that is the point of the licence.
 - [ ] Confirm live DOWNLOAD/UPLOAD on a real device.
 - [ ] Revisit `acceptFraction = 0.70`, currently set on judgement rather than evidence.
 - [ ] Refresh the bundled `automode_*.txt` snapshots each release — they go stale.
-- [ ] First tagged release.
+- [x] First tagged release.
+- [ ] Get listed on IzzyOnDroid, so updates arrive through an F-Droid client rather than by
+      remembering to check a Releases page.
 
 ---
 
