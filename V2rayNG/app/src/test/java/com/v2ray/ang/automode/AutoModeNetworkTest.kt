@@ -21,14 +21,14 @@ class AutoModeNetworkTest {
 
     @Test
     fun `offers the chosen mirror once they are on`() {
+        assertEquals(
+            listOf("https://cdn.jsdelivr.net/gh/morpheusadam/v2ray-config@main/subs/all.txt"),
+            AutoModeNetwork.mirrorsFor(subsUrl, enabled = true, index = 0)
+        )
         // A static mirror: the repository layout is reproduced under the host, so this is the
         // upstream URL with the host swapped and nothing else.
         assertEquals(
             listOf("https://cdn.lavzen.com/subs/all.txt"),
-            AutoModeNetwork.mirrorsFor(subsUrl, enabled = true, index = 0)
-        )
-        assertEquals(
-            listOf("https://cdn.jsdelivr.net/gh/morpheusadam/v2ray-config@main/subs/all.txt"),
             AutoModeNetwork.mirrorsFor(subsUrl, enabled = true, index = 1)
         )
     }
@@ -55,10 +55,13 @@ class AutoModeNetworkTest {
         assertEquals(first, AutoModeNetwork.mirrorsFor(subsUrl, enabled = true, index = -1))
     }
 
-    /** This project's own mirror is the one offered first; see the ordering rationale there. */
+    /** Every mirror names who runs it, which is the question choosing one actually asks. */
     @Test
-    fun `this project's own mirror is first`() {
-        assertTrue(AutoModeNetwork.MIRRORS.first().name.contains("v2rayV"))
+    fun `every mirror says who operates it`() {
+        AutoModeNetwork.MIRRORS.forEach { mirror ->
+            assertTrue(mirror.name.isNotBlank())
+            assertTrue(mirror.operator.isNotBlank())
+        }
     }
 
     /**
@@ -72,7 +75,7 @@ class AutoModeNetworkTest {
         val mirrors = AutoModeNetwork.mirrorsFor(
             "https://raw.githubusercontent.com/user/repo/refs/heads/main/config.txt",
             enabled = true,
-            index = 1,
+            index = 0,
         )
 
         assertTrue(mirrors.first().endsWith("/gh/user/repo@main/config.txt"))

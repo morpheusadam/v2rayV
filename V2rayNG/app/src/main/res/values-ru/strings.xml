@@ -565,4 +565,5 @@
     <string name="disclosure_host_servers">Серверы, к которым вы подключаетесь</string>
     <string name="disclosure_never_title">Чего он не отправляет никогда</string>
     <string name="disclosure_never">Ни аналитики, ни телеметрии, ни отчётов о сбоях, ни рекламного идентификатора, ни аккаунта. Ничто не идентифицирует вашу установку, и не существует сервера этого приложения, который что-либо о вас собирает.</string>
+    <string name="drawer_battery">Не выгружать в фоне</string>
 </resources>

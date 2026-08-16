@@ -628,4 +628,5 @@ A mirror serves the same files from somewhere else — but whoever runs it then 
     <string name="disclosure_host_servers">The servers you connect to</string>
     <string name="disclosure_never_title">What it never sends</string>
     <string name="disclosure_never">No analytics, no telemetry, no crash reporting, no advertising identifier, no account. Nothing identifies your install, and there is no server belonging to this app that collects anything about you.</string>
+    <string name="drawer_battery">Keep running in the background</string>
 </resources>

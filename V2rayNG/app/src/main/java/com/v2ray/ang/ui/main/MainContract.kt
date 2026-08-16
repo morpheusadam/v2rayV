@@ -61,6 +61,12 @@ sealed interface MainAction {
      * app rather than anything in it. See [com.v2ray.ang.handler.ShareAppHandler].
      */
     data object ShareApp : MainAction
+
+    /**
+     * Raise Android's own dialog asking that this app not be suspended in the background.
+     * See [com.v2ray.ang.handler.BatteryOptimizationHandler].
+     */
+    data object RequestKeepAlive : MainAction
     data object DismissQRCodeDialog : MainAction
 
     data class ImportBatchConfig(val configText: String) : MainAction

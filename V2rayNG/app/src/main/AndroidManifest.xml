@@ -65,6 +65,13 @@
       The in-app Backup/Restore screen is unaffected: it writes a file the user asked for, to
       a place the user picked.
     -->
+    <!--
+      Only ever used to raise Android's own "allow this app to run in the background" dialog,
+      which the user answers. It grants nothing by itself. Without it the tunnel is suspended
+      by Doze while the phone is idle, which is the most common way a connection dies.
+    -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
     <application
         android:name=".AngApplication"
         android:allowBackup="false"

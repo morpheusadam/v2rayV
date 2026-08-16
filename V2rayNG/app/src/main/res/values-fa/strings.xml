@@ -602,4 +602,5 @@
     <string name="disclosure_host_servers">سرورهایی که به آن‌ها وصل می‌شوی</string>
     <string name="disclosure_never_title">چه چیزی هرگز نمی‌فرستد</string>
     <string name="disclosure_never">نه analytics، نه telemetry، نه گزارش crash، نه شناسهٔ تبلیغاتی، نه حساب کاربری. هیچ‌چیز نصب تو را شناسایی نمی‌کند، و هیچ سروری متعلق به این اپ وجود ندارد که چیزی دربارهٔ تو جمع کند.</string>
+    <string name="drawer_battery">در پس‌زمینه زنده بماند</string>
 </resources>

@@ -81,6 +81,10 @@ fun MainScreen(
                     rootScope.launch { rootDrawerState.close() }
                     onAction(MainAction.ShareApp)
                 },
+                onKeepAlive = {
+                    rootScope.launch { rootDrawerState.close() }
+                    onAction(MainAction.RequestKeepAlive)
+                },
             )
         }
     ) {

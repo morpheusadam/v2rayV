@@ -84,6 +84,7 @@ fun MainDrawerContent(
     onNavigate: (MainDestination) -> Unit,
     onOpenServers: () -> Unit,
     onShareApp: () -> Unit = {},
+    onKeepAlive: () -> Unit = {},
 ) {
     val scrollState = rememberScrollState()
 
@@ -126,6 +127,11 @@ fun MainDrawerContent(
             // how this app reaches people at all — there is no store listing to find it in.
             DrawerRow(R.drawable.ic_share_24dp, stringResource(R.string.drawer_share_app)) {
                 onShareApp()
+            }
+            // Android suspends idle apps, which kills the tunnel while the phone is in a
+            // pocket. This is the only way to ask it not to, and the user answers the dialog.
+            DrawerRow(R.drawable.ic_settings_24dp, stringResource(R.string.drawer_battery)) {
+                onKeepAlive()
             }
             aboutItems.forEach { item ->
                 DrawerRow(item.iconRes, stringResource(item.labelRes)) { onNavigate(item) }

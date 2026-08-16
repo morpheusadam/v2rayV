@@ -565,4 +565,5 @@
     <string name="disclosure_host_servers">你连接的那些节点</string>
     <string name="disclosure_never_title">它从不发送什么</string>
     <string name="disclosure_never">没有统计、没有遥测、没有崩溃上报、没有广告标识符、没有账号。没有任何东西能标识你的安装，也不存在属于这个应用的、会收集你信息的服务器。</string>
+    <string name="drawer_battery">允许在后台保持运行</string>
 </resources>

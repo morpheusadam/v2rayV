@@ -93,27 +93,38 @@ object AutoModeNetwork {
     )
 
     /**
-     * The mirrors on offer, in the order the settings screen lists them.
+     * The mirrors on offer, in the order the settings screen lists them, which is also the
+     * order of what answers most reliably today.
      *
-     * First is this project's own, because it is the only one that is not merely another way of
-     * asking GitHub: it answers from its own storage and refreshes in the background, so it
-     * survives GitHub being unreachable rather than only GitHub being blocked from the user's
-     * network. The CDNs below it are ordinary CDNs rather than circumvention tools, useful here
-     * only because a block list naming `raw.githubusercontent.com` usually does not name them.
+     * The CDNs are ordinary CDNs rather than circumvention tools, useful here only because a
+     * block list naming `raw.githubusercontent.com` usually does not name them. They read from
+     * GitHub on demand, so they survive GitHub being blocked from the user's network and
+     * nothing else.
+     *
+     * This project's own is the only one that is not another way of asking GitHub: it answers
+     * from storage it refreshes in the background, so it survives GitHub being unreachable
+     * too. It sits second only because it is new, and a rung that is reached exactly when
+     * everything else has already failed is the wrong place to find out whether a
+     * week-old subdomain resolves.
      */
     val MIRRORS: List<Mirror> = listOf(
         // Plain static files rather than a jsDelivr-style path, because it is a plain static
         // mirror: a cron job copies the repository's files into a directory and Apache serves
         // them. The layout is kept identical to the repository's, so this is the upstream URL
-        // with the host swapped and nothing else — no mapping table to keep in step.
-        Mirror(
-            name = "v2rayV mirror",
-            operator = "this app's author",
-        ) { _, _, _, path -> "https://cdn.lavzen.com/$path" },
+        // with the host swapped and nothing else, with no mapping table to keep in step.
+        //
+        // Listed second rather than first while the host is new. A mirror is only reached
+        // when the list host has already failed, so the one offered first should be the one
+        // most likely to answer, and a public CDN that has been up for years beats a
+        // subdomain that went up this week. Move it back to the front once it has a record.
         Mirror(
             name = "jsDelivr",
             operator = "jsDelivr, a public CDN",
         ) { user, repo, ref, path -> "https://cdn.jsdelivr.net/gh/$user/$repo@$ref/$path" },
+        Mirror(
+            name = "v2rayV mirror",
+            operator = "this app's author",
+        ) { _, _, _, path -> "https://cdn.lavzen.com/$path" },
         Mirror(
             name = "raw.githack",
             operator = "githack, a public CDN",

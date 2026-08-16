@@ -311,6 +311,8 @@ class MainViewModel(
             // Needs an Activity to start the chooser from, so MainActivity intercepts it
             // before this ever sees it. Present only because the when is exhaustive.
             MainAction.ShareApp -> Unit
+            // Also needs an Activity; MainActivity intercepts it before this sees it.
+            MainAction.RequestKeepAlive -> Unit
             MainAction.Initialize -> initialize()
             MainAction.RefreshGroups -> setupGroupTab(forceRefresh = true)
             MainAction.TestAllServers -> testAllRealPing(true)

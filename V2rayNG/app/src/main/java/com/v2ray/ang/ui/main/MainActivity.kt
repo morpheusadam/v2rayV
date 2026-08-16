@@ -21,6 +21,7 @@ import com.v2ray.ang.extension.toast
 import com.v2ray.ang.extension.toastError
 import com.v2ray.ang.extension.toastSuccess
 import com.v2ray.ang.handler.AngConfigManager
+import com.v2ray.ang.handler.BatteryOptimizationHandler
 import com.v2ray.ang.handler.ShareAppHandler
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsChangeManager
@@ -118,11 +119,27 @@ class MainActivity : HelperBaseComponentActivity() {
                     is MainAction.ShareClipboard -> shareToClipboard(action.guid)
                     is MainAction.ShareFullContent -> shareFullContentAsync(action.guid)
                     MainAction.ShareApp -> shareApp()
+                    MainAction.RequestKeepAlive -> requestKeepAlive()
                     else -> mainViewModel.onAction(action)
                 }
             },
             onNavigate = { route -> navigateTo(route) },
         )
+    }
+
+    private fun requestKeepAlive() {
+        val intent = BatteryOptimizationHandler.buildIntent(this)
+        if (intent == null) {
+            toastError(R.string.toast_failure)
+            return
+        }
+        try {
+            startActivity(intent)
+        } catch (e: Exception) {
+            // Some builds ship without the settings screen the intent names.
+            LogUtil.e(AppConfig.TAG, "Battery: no activity for the request intent", e)
+            toastError(R.string.toast_failure)
+        }
     }
 
     /**
