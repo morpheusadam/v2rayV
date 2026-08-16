@@ -2,6 +2,11 @@
 *.dat
 *.jks
 
+# Local secrets: the release keystore and the passwords that open it. Ignored as a whole
+# directory rather than by extension, so a file added here later is covered by default
+# instead of being one forgotten pattern away from being committed.
+.data/
+
 # Ignore output JSON file
 V2rayNG/app/release/output.json
 
