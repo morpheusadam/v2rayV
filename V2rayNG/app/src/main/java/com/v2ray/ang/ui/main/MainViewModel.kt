@@ -825,11 +825,6 @@ class MainViewModel(
                         serverCountry = info.country,
                         reservePosition = info.reservePosition,
                         reserveTotal = info.reserveTotal,
-                        // The header used to be written only when the tunnel changed state,
-                        // so a run that picked a server left it reading "no server selected"
-                        // until something connected. It names the selection, not the
-                        // connection.
-                        serverName = info.remarks,
                     )
                 )
             }
@@ -1049,7 +1044,6 @@ class MainViewModel(
                     state.dashboard.copy(
                         connected = true,
                         connecting = false,
-                        serverName = currentServerName(),
                     )
                 } else {
                     // A dropped tunnel invalidates every *live* figure on the dashboard,
@@ -1058,7 +1052,6 @@ class MainViewModel(
                     // test, and they stay: "this server does 0.7 of your 3.9" is equally
                     // true whether or not the tunnel happens to be up right now.
                     DashboardState(
-                        serverName = currentServerName(),
                         lineMbps = state.dashboard.lineMbps,
                         vpnMbps = state.dashboard.vpnMbps,
                         notice = state.dashboard.notice,
@@ -1073,9 +1066,6 @@ class MainViewModel(
             ipInfoJob?.cancel()
         }
     }
-
-    private fun currentServerName(): String =
-        uiState.value.selectedGuid?.let { dataSource.decodeServerConfig(it)?.remarks }.orEmpty()
 
     /**
      * Ask, through the tunnel, where the traffic actually comes out.

@@ -12,7 +12,6 @@ import java.util.Locale
 data class DashboardState(
     val connected: Boolean = false,
     val connecting: Boolean = false,
-    val serverName: String = "",
     /** ISO country code measured through the tunnel, or null before the lookup lands. */
     val country: String? = null,
     val ipAddress: String? = null,

@@ -99,15 +99,12 @@ fun DashboardScreen(
                         tint = Securo.TextPrimary,
                     )
                 }
-                Spacer(Modifier.weight(1f))
-                Text(
-                    text = state.serverName.ifBlank { stringResource(R.string.dashboard_no_server) },
-                    style = Securo.Unit,
-                    color = Securo.TextSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(end = 4.dp),
-                )
+                // The server's name used to sit here. It is whatever the subscription that
+                // published the server chose to call it, and public lists overwhelmingly
+                // choose an advert — a channel to join, a site to visit — so the app's own
+                // header was carrying someone else's marketing. Nothing on this screen
+                // depended on it: the flag on THROUGH VPN already says where the traffic
+                // leaves, and the reserve position is on the Auto Mode card.
             }
 
             StatusCard(state = state, onTogglePower = onTogglePower)
