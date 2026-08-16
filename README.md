@@ -128,8 +128,8 @@ Fetching a subscription is itself censored. On a network that blocks
 
 ```mermaid
 flowchart LR
-    A["direct<br/>raw.githubusercontent.com"] -->|blocked| B["CDN mirrors<br/>jsdelivr · githack"]
-    B -->|blocked| C["a discovered proxy<br/>from the bundled list"]
+    A["direct<br/>raw.githubusercontent.com"] -->|blocked| B["one mirror<br/>only if you turned it on"]
+    B -->|blocked or off| C["a discovered proxy<br/>from the bundled list"]
     C -->|nothing works| D["snapshot inside the APK<br/>always available"]
     A -->|works| E["configs"]
     B --> E
@@ -140,6 +140,35 @@ flowchart LR
 The last rung ships inside the APK, so a **first run on an already-blocked network** still
 has something to work with. That is the circular-bootstrap problem: the proxy list you need
 in order to reach GitHub lives on GitHub.
+
+### Mirrors are off until you switch them on
+
+The second rung is the only one that talks to somebody new, and it is disabled by default.
+
+Asking GitHub for a subscription list tells GitHub that an address wanted one. Asking a
+mirror tells whoever runs that mirror the same thing — and the mirrors are third parties you
+never chose. Where this app is most useful, *who requested a subscription list, and from
+where* is not a harmless fact, and it is not ours to disclose on your behalf just because it
+makes a fetch more likely to succeed.
+
+So the fallback exists, works, and stays off. Turn it on under **Auto Mode → Settings →
+Mirrors**, and pick one. Only the mirror you picked is ever contacted — never the whole list,
+because trying each in turn would tell every operator on it what you asked for in order to
+save a single failed fetch. Each is named by **who runs it**, not by its hostname, since that
+is the actual question being answered.
+
+| Mirror | Run by | Survives |
+|---|---|---|
+| v2rayV mirror | this project | GitHub being blocked **and** GitHub being down |
+| jsDelivr | a public CDN | GitHub being blocked |
+| raw.githack | a public CDN | GitHub being blocked |
+
+The difference in the last column is the reason the first one exists. The public CDNs read
+from GitHub on demand, so they are three front doors to one room: they cover a network that
+blocks `raw.githubusercontent.com`, and nothing else. The first-party mirror
+([`mirror/`](mirror/)) answers from its own object storage and refreshes in the background,
+including on a schedule, so the copy is already warm during exactly the conditions that make
+fetching it on demand fail.
 
 Its lists come from **[v2ray-config](https://github.com/morpheusadam/v2ray-config)**, a
 companion repository that rebuilds itself daily — every subscription proved to carry configs,
