@@ -1,0 +1,76 @@
+name: Announce release
+
+# Posts every published release to the Telegram channel, with the logo.
+#
+# Telegram is the distribution channel that actually matters for this app — there is no store
+# listing, and the people who need it are largely reachable there and not elsewhere. An
+# announcement that depends on somebody remembering to write it is an announcement that stops
+# happening after the third release, so it happens here instead.
+#
+# Triggered on `released` rather than `published` so that a pre-release does not notify the
+# channel. Draft releases never fire either, which is what makes it safe to prepare one.
+
+on:
+  release:
+    types: [released]
+  # For testing the message without cutting a release: run manually against an existing tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to announce
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  announce:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Post to Telegram
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          NOTES: ${{ github.event.release.body }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${TOKEN:-}" ] || [ -z "${CHAT:-}" ]; then
+            echo "TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is not set; nothing to do."
+            exit 0
+          fi
+
+          RELEASE_URL="https://github.com/${REPO}/releases/tag/${TAG}"
+
+          # sendPhoto captions are capped at 1024 characters, and the cap is counted in UTF-16
+          # code units rather than bytes. Rather than trying to be clever about where that
+          # lands, the notes are cut well short of it and the reader is sent to the release
+          # page for the rest — which is where the download links are anyway.
+          BODY=$(printf '%s' "${NOTES:-}" | head -c 600)
+
+          CAPTION="v2rayV ${TAG}"$'\n\n'"${BODY}"$'\n\n'"⬇️ ${RELEASE_URL}"
+
+          # --form-string, not --form: --form treats a leading @ or < in the value as a file
+          # reference, and a release note beginning with either would make curl try to upload
+          # a path instead of sending the text.
+          HTTP=$(curl -sS -o /tmp/tg.json -w '%{http_code}' \
+            -X POST "https://api.telegram.org/bot${TOKEN}/sendPhoto" \
+            --form-string "chat_id=${CHAT}" \
+            --form-string "caption=${CAPTION}" \
+            --form "photo=@design/logo/png/icon/logo-glass-1024.png")
+
+          echo "HTTP ${HTTP}"
+          if [ "${HTTP}" != "200" ]; then
+            # The token is in this job's environment, so only Telegram's own error text is
+            # printed — never the request that carried it.
+            echo "Telegram rejected the post:"
+            cat /tmp/tg.json
+            exit 1
+          fi
+          echo "Announced ${TAG}."
