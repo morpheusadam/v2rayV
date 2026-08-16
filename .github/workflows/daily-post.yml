@@ -1,0 +1,111 @@
+name: Daily channel post
+
+# Posts one prepared piece to the Telegram channel per day, in order, then stops.
+#
+# The posts live in content/telegram/ as ordinary files so they can be read, edited and
+# reviewed in a pull request like anything else. Which one is next is tracked in
+# content/telegram/.state, committed back after each successful post: a counter derived from
+# the date instead would silently skip a post whenever a run failed or the channel was
+# unreachable, and skipping is the one failure mode worth engineering against here.
+
+on:
+  schedule:
+    # 09:30 UTC, which is around 13:00 in Tehran. Deliberately not on the hour: GitHub's
+    # scheduler is busiest then and delays runs by tens of minutes.
+    - cron: '30 9 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Print the next post instead of sending it
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  # Two runs at once would both read the same state and post the same piece twice.
+  group: daily-post
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Send the next post
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+
+          DIR=content/telegram
+          STATE="$DIR/.state"
+          DONE=$(cat "$STATE" 2>/dev/null || echo 0)
+
+          # Sorted by filename, which is why they are numbered.
+          NEXT=$(ls "$DIR"/*.md | sort | sed -n "$((DONE + 1))p")
+
+          if [ -z "${NEXT:-}" ]; then
+            echo "All $DONE posts have been sent. Nothing left to do."
+            exit 0
+          fi
+
+          echo "Next: $NEXT"
+
+          # First line is "image: <path>", then a blank line, then the text.
+          IMAGE=$(head -n 1 "$NEXT" | sed 's/^image:[[:space:]]*//')
+          CAPTION=$(tail -n +3 "$NEXT")
+
+          if [ ! -f "$IMAGE" ]; then
+            echo "Image not found: $IMAGE"
+            exit 1
+          fi
+
+          if [ "${DRY_RUN:-false}" = "true" ]; then
+            echo "--- dry run, not sending ---"
+            echo "image: $IMAGE"
+            echo "$CAPTION"
+            exit 0
+          fi
+
+          if [ -z "${TOKEN:-}" ] || [ -z "${CHAT:-}" ]; then
+            echo "TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is not set; nothing to do."
+            exit 0
+          fi
+
+          # --form-string for the caption: --form would read a leading @ or < in the text as
+          # a file path. The image is the one field that really is a file.
+          HTTP=$(curl -sS -o /tmp/tg.json -w '%{http_code}' \
+            -X POST "https://api.telegram.org/bot${TOKEN}/sendPhoto" \
+            --form-string "chat_id=${CHAT}" \
+            --form-string "caption=${CAPTION}" \
+            --form "photo=@${IMAGE}")
+
+          if [ "${HTTP}" != "200" ]; then
+            echo "Telegram rejected the post:"
+            cat /tmp/tg.json
+            exit 1
+          fi
+
+          # Only after Telegram accepted it. Writing the state first would lose a post on a
+          # failed send, which is the thing this counter exists to prevent.
+          echo "$((DONE + 1))" > "$STATE"
+          echo "Sent $(basename "$NEXT")."
+
+      - name: Record what was sent
+        if: ${{ success() && inputs.dry_run != true }}
+        run: |
+          if git diff --quiet content/telegram/.state; then
+            echo "No state change to record."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add content/telegram/.state
+          git commit -m "Channel post $(cat content/telegram/.state) sent"
+          git push
