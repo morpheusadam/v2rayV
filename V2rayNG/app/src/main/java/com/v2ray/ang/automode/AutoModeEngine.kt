@@ -379,6 +379,16 @@ class AutoModeEngine(
 
             result.success = winners.isNotEmpty()
             result.message = when {
+                // Said before anything else, because when the clock is out this is not one
+                // problem among several, it is the whole explanation. VMess and VLESS
+                // authenticate with a timestamp and every server refuses a handshake outside
+                // its window, so the run reports hundreds of dead servers and the user has no
+                // way to see that none of them were dead.
+                winners.isEmpty() && ClockSkew.isSkewed() ->
+                    "Nothing connected, and your phone's clock is off by " +
+                        "${skewDescription()}. Servers refuse connections when the time is " +
+                        "wrong. Turn on automatic date and time, then run this again."
+
                 winners.isEmpty() -> "Auto Mode found no server fast enough to keep."
                 // Naming the line speed the servers were measured against is the
                 // difference between "5.7 MB/s, is that good?" and an answer.
@@ -1010,6 +1020,18 @@ class AutoModeEngine(
 
         AutoModeSourceManager.save()
         return keptGuids
+    }
+
+    /** The skew in units a person can act on, rather than a signed number of seconds. */
+    private fun skewDescription(): String {
+        val seconds = ClockSkew.skewSeconds() ?: return "more than a minute"
+        val magnitude = kotlin.math.abs(seconds)
+        val amount = when {
+            magnitude >= 172800 -> "${magnitude / 86400} days"
+            magnitude >= 7200 -> "${magnitude / 3600} hours"
+            else -> "${magnitude / 60} minutes"
+        }
+        return if (seconds > 0) "$amount too fast" else "$amount too slow"
     }
 
     private fun formatSpeed(mbPerSecond: Double): String =

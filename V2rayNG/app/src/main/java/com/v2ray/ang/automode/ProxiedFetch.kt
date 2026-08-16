@@ -373,6 +373,10 @@ object ProxiedFetch {
             else -> readUntilClose(input)
         } ?: return null
 
+        // Every response passes through here, so this is the one place the Date header can be
+        // read without adding a request anywhere. See [ClockSkew] for why it is worth reading.
+        ClockSkew.observe(headers)
+
         return Response(code, body, headers)
     }
 
