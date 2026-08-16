@@ -1,27 +1,38 @@
-<p>A V2Ray client for Android, support <a href="https://github.com/XTLS/Xray-core">Xray core</a> and <a href="https://github.com/v2fly/v2ray-core">v2fly core</a></p>
+<p>A free, open-source V2Ray / Xray client for Android, for people who use public subscription links and would rather have the client find a working server than tap through a list of dead ones.</p>
 
-<h3>Telegram Channel</h3>
+<h3>Auto Mode</h3>
 
-<p><a href="https://t.me/github_2dust">github_2dust</a></p>
+<p>Most clients hand you three hundred servers and wish you luck. Most of them are dead, and some of the live ones are slower than your own connection.</p>
 
-<h3>Usage</h3>
+<p>v2rayV does that work itself. One button. It fetches your subscription sources, imports what it finds, throws out what cannot carry traffic, and measures what survives <b>against your own connection speed</b> — a server is good enough when it delivers at least 70% of what your bare line delivers. It connects on the first one that clears the bar, then keeps testing in the background so the next press is instant.</p>
 
-<h4>Geoip and Geosite</h4>
+<p>That comparison is the part no other client makes. Ranking servers against each other cannot tell you the fastest of ten bad servers is still a bad server, and on a 20 MB/s line a 1 MB/s "winner" is a failure.</p>
+
+<h3>What it does while you are not looking</h3>
 
 <ul>
-<li>geoip.dat and geosite.dat files are in <code>Android/data/com.v2ray.ang/files/assets</code> (path may differ on some Android device)</li>
-<li>download feature will get enhanced version in this <a href="https://github.com/Loyalsoldier/v2ray-rules-dat">repo</a> (Note it need a working proxy)</li>
-<li>latest official <a href="https://github.com/v2fly/domain-list-community">domain list</a> and <a href="https://github.com/v2fly/geoip">ip list</a> can be imported manually</li>
-<li>possible to use third party dat file in the same folder, like <a href="https://guide.v2fly.org/routing/sitedata.html#%E5%A4%96%E7%BD%AE%E7%9A%84%E5%9F%9F%E5%90%8D%E6%96%87%E4%BB%B6">h2y</a></li>
+<li>Keeps a reserve of ready, already-tested servers, so only the very first connection is ever slow.</li>
+<li>Notices when the network under the tunnel changes — Wi-Fi to mobile data, a new address from your carrier — and checks the server still works there before leaving you on it.</li>
+<li>Moves to the next server on its own when a connection stops carrying traffic.</li>
+<li>Refreshes the reserve on a schedule, never while the tunnel is up, so a background refresh is not a background battery drain.</li>
 </ul>
 
-<h3>More in our <a href="https://github.com/2dust/v2rayNG/wiki">wiki</a></h3>
+<h3>Protocols</h3>
 
-<h3>Development guide</h3>
+<p>VLESS, REALITY, VMess, Trojan, Shadowsocks, Hysteria2 and TUIC, on the Xray and v2fly cores.</p>
 
-<p>Android project under V2rayNG folder can be compiled directly in Android Studio, or using Gradle wrapper. But the v2ray core inside the aar is (probably) outdated.
-The aar can be compiled from the Golang project <a href="https://github.com/2dust/AndroidLibV2rayLite">AndroidLibV2rayLite</a> or <a href="https://github.com/2dust/AndroidLibXrayLite">AndroidLibXrayLite</a>.
-For a quick start, read guide for <a href="https://github.com/golang/go/wiki/Mobile">Go Mobile</a> and <a href="https://tutorialedge.net/golang/makefiles-for-go-developers/">Makefiles for Go Developers</a></p>
+<h3>What it does not do</h3>
 
-<p>v2rayNG can run on Android Emulators. For WSA, VPN permission need to be granted via
-<code>appops set [package name] ACTIVATE_VPN allow</code></p>
+<ul>
+<li>No account, no sign-up, no subscription to buy. It is a client: you bring your own servers or public lists.</li>
+<li>No analytics, no telemetry, no advertising identifier, no crash reporting to anyone.</li>
+<li>It does not sell you a VPN service and is not affiliated with any provider.</li>
+</ul>
+
+<h3>Notes</h3>
+
+<ul>
+<li>Installs alongside v2rayNG rather than replacing it — its own data, its own icon, its own notification.</li>
+<li>Android 7.0 or newer.</li>
+<li>Free software under the GPL-3.0. A fork of v2rayNG by 2dust, whose work the whole thing rests on.</li>
+</ul>
