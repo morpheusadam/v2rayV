@@ -612,4 +612,20 @@
 A mirror serves the same files from somewhere else — but whoever runs it then learns that your address asked for a subscription list. That is not always a harmless fact, so it is your call, not ours. Only the mirror you pick is ever contacted.</string>
     <string name="automode_mirrors_operator">Requests go to: %1$s</string>
     <string name="drawer_share_app">Give this app to someone</string>
+    <string name="title_disclosure">What this app sends</string>
+    <string name="disclosure_intro">A VPN client is handed every packet your device sends, so it should be able to tell you exactly who it talks to. This is the complete list for the app itself. All of it is checkable in a packet capture — a claim you cannot verify is not worth making.</string>
+    <string name="disclosure_when_run">Only during an Auto Mode run</string>
+    <string name="disclosure_when_blocked">Only when the list host did not answer, and only because you turned mirrors on</string>
+    <string name="disclosure_when_connected">While connected</string>
+    <string name="disclosure_when_update">When you check for an update</string>
+    <string name="disclosure_why_lists">Downloads the subscription lists and the notice file.</string>
+    <string name="disclosure_why_mirror">The same files, from the mirror you chose.</string>
+    <string name="disclosure_why_baseline">Measures your own connection speed, so servers can be judged against it.</string>
+    <string name="disclosure_why_delay">An empty response used to time servers and to check the tunnel still carries traffic.</string>
+    <string name="disclosure_why_country">Asks, through the tunnel, which country the traffic comes out in.</string>
+    <string name="disclosure_why_update">Reads the list of releases to see whether a newer one exists.</string>
+    <string name="disclosure_why_servers">Your traffic, through whichever server is selected.</string>
+    <string name="disclosure_host_servers">The servers you connect to</string>
+    <string name="disclosure_never_title">What it never sends</string>
+    <string name="disclosure_never">No analytics, no telemetry, no crash reporting, no advertising identifier, no account. Nothing identifies your install, and there is no server belonging to this app that collects anything about you.</string>
 </resources>

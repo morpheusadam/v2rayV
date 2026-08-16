@@ -1,5 +1,6 @@
 package com.v2ray.ang.ui
 
+import android.content.Intent
 import android.os.Bundle
 import android.webkit.WebView
 import androidx.compose.foundation.layout.Column
@@ -87,10 +88,16 @@ fun AboutScreen(onBackClick: () -> Unit) {
                 title = stringResource(R.string.title_pref_feedback),
                 onClick = { Utils.openUri(context, AppConfig.APP_ISSUES_URL) }
             )
+            // The Telegram row that used to sit here pointed at upstream's channel, so this
+            // app was sending its own users somewhere run by a different project. Removed
+            // rather than repointed: there is no channel of our own to send them to yet, and
+            // no link is better than the wrong one.
             SettingsMenuItem(
-                icon = painterResource(R.drawable.ic_telegram_24dp),
-                title = stringResource(R.string.title_tg_channel),
-                onClick = { Utils.openUri(context, AppConfig.TG_CHANNEL_URL) }
+                icon = painterResource(R.drawable.ic_privacy_24dp),
+                title = stringResource(R.string.title_disclosure),
+                onClick = {
+                    context.startActivity(Intent(context, DisclosureActivity::class.java))
+                }
             )
             SettingsMenuItem(
                 icon = painterResource(R.drawable.ic_privacy_24dp),

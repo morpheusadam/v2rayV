@@ -586,4 +586,20 @@
 یک میرور همان فایل‌ها را از جای دیگری می‌دهد — ولی هرکس که آن را می‌گرداند می‌فهمد که از آدرس تو درخواست لیست subscription آمده. این همیشه واقعیت بی‌خطری نیست، پس تصمیمش با توست نه با ما. فقط با همان میروری که انتخاب می‌کنی تماس گرفته می‌شود.</string>
     <string name="automode_mirrors_operator">درخواست‌ها می‌روند به: %1$s</string>
     <string name="drawer_share_app">این اپ را به کسی بده</string>
+    <string name="title_disclosure">این اپ چه چیزی می‌فرستد</string>
+    <string name="disclosure_intro">یک کلاینت VPN همهٔ بسته‌هایی که دستگاهت می‌فرستد را در اختیار می‌گیرد، پس باید بتواند دقیقاً بگوید با چه کسی حرف می‌زند. این فهرست کاملِ خود اپ است. همه‌اش با یک packet capture قابل بررسی است — ادعایی که نتوانی راستی‌آزمایی‌اش کنی ارزش گفتن ندارد.</string>
+    <string name="disclosure_when_run">فقط در حین اجرای Auto Mode</string>
+    <string name="disclosure_when_blocked">فقط وقتی میزبان لیست جواب نداد، و فقط چون خودت میرورها را روشن کرده‌ای</string>
+    <string name="disclosure_when_connected">وقتی وصل هستی</string>
+    <string name="disclosure_when_update">وقتی آپدیت را چک می‌کنی</string>
+    <string name="disclosure_why_lists">لیست‌های subscription و فایل اعلان را دانلود می‌کند.</string>
+    <string name="disclosure_why_mirror">همان فایل‌ها، از میروری که خودت انتخاب کردی.</string>
+    <string name="disclosure_why_baseline">سرعت خط خودت را می‌سنجد تا سرورها در برابر آن قضاوت شوند.</string>
+    <string name="disclosure_why_delay">یک پاسخ خالی، برای زمان‌گیری سرورها و بررسی اینکه تونل هنوز ترافیک عبور می‌دهد.</string>
+    <string name="disclosure_why_country">از داخل تونل می‌پرسد ترافیک در کدام کشور بیرون می‌آید.</string>
+    <string name="disclosure_why_update">فهرست releaseها را می‌خواند تا ببیند نسخهٔ تازه‌تری هست یا نه.</string>
+    <string name="disclosure_why_servers">ترافیک تو، از طریق سروری که انتخاب شده.</string>
+    <string name="disclosure_host_servers">سرورهایی که به آن‌ها وصل می‌شوی</string>
+    <string name="disclosure_never_title">چه چیزی هرگز نمی‌فرستد</string>
+    <string name="disclosure_never">نه analytics، نه telemetry، نه گزارش crash، نه شناسهٔ تبلیغاتی، نه حساب کاربری. هیچ‌چیز نصب تو را شناسایی نمی‌کند، و هیچ سروری متعلق به این اپ وجود ندارد که چیزی دربارهٔ تو جمع کند.</string>
 </resources>

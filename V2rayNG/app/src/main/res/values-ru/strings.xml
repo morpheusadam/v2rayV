@@ -549,4 +549,20 @@
 Зеркало отдаёт те же файлы откуда-то ещё — но тот, кто им управляет, узнает, что с вашего адреса запросили список подписок. Это не всегда безобидный факт, поэтому решение ваше, а не наше. Обращение идёт только к тому зеркалу, которое вы выбрали.</string>
     <string name="automode_mirrors_operator">Запросы уходят на: %1$s</string>
     <string name="drawer_share_app">Передать это приложение</string>
+    <string name="title_disclosure">Что это приложение отправляет</string>
+    <string name="disclosure_intro">VPN-клиенту достаётся каждый пакет, который отправляет ваше устройство, поэтому он обязан сказать, с кем именно он связывается. Это полный список для самого приложения. Всё это проверяется перехватом трафика — утверждение, которое нельзя проверить, не стоит того, чтобы его делать.</string>
+    <string name="disclosure_when_run">Только во время запуска Auto Mode</string>
+    <string name="disclosure_when_blocked">Только если хост списков не ответил, и только потому, что вы включили зеркала</string>
+    <string name="disclosure_when_connected">Пока подключено</string>
+    <string name="disclosure_when_update">Когда вы проверяете обновление</string>
+    <string name="disclosure_why_lists">Загружает списки подписок и файл уведомления.</string>
+    <string name="disclosure_why_mirror">Те же файлы, с выбранного вами зеркала.</string>
+    <string name="disclosure_why_baseline">Измеряет скорость вашего канала, чтобы серверы можно было с ней сравнивать.</string>
+    <string name="disclosure_why_delay">Пустой ответ для замера серверов и проверки, что туннель ещё везёт трафик.</string>
+    <string name="disclosure_why_country">Спрашивает через туннель, в какой стране выходит трафик.</string>
+    <string name="disclosure_why_update">Читает список релизов, чтобы узнать, есть ли новее.</string>
+    <string name="disclosure_why_servers">Ваш трафик, через выбранный сервер.</string>
+    <string name="disclosure_host_servers">Серверы, к которым вы подключаетесь</string>
+    <string name="disclosure_never_title">Чего он не отправляет никогда</string>
+    <string name="disclosure_never">Ни аналитики, ни телеметрии, ни отчётов о сбоях, ни рекламного идентификатора, ни аккаунта. Ничто не идентифицирует вашу установку, и не существует сервера этого приложения, который что-либо о вас собирает.</string>
 </resources>

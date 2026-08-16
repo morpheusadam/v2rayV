@@ -549,4 +549,20 @@
 镜像从别处提供同样的文件 —— 但运营镜像的人会因此知道，你的地址请求过一份订阅列表。这并不总是一件无害的事，所以这个决定该由你来做，而不是我们。只有你选中的那个镜像会被访问。</string>
     <string name="automode_mirrors_operator">请求会发往：%1$s</string>
     <string name="drawer_share_app">把这个应用给别人</string>
+    <string name="title_disclosure">这个应用会发出什么</string>
+    <string name="disclosure_intro">VPN 客户端拿到的是你设备发出的每一个数据包，所以它应该能说清楚自己在跟谁通信。这是应用自身的完整清单。所有这些都能用抓包验证 —— 无法核实的说法就不值得说。</string>
+    <string name="disclosure_when_run">仅在 Auto Mode 运行期间</string>
+    <string name="disclosure_when_blocked">仅当列表主机没有响应，且仅因为你打开了镜像</string>
+    <string name="disclosure_when_connected">连接期间</string>
+    <string name="disclosure_when_update">当你检查更新时</string>
+    <string name="disclosure_why_lists">下载订阅列表和通知文件。</string>
+    <string name="disclosure_why_mirror">同样的文件，来自你选择的镜像。</string>
+    <string name="disclosure_why_baseline">测量你自己的线路速度，好让节点能跟它作比较。</string>
+    <string name="disclosure_why_delay">一个空响应，用来给节点计时并检查隧道是否还在跑流量。</string>
+    <string name="disclosure_why_country">通过隧道询问流量从哪个国家出去。</string>
+    <string name="disclosure_why_update">读取发布列表，看看有没有更新的版本。</string>
+    <string name="disclosure_why_servers">你的流量，通过选中的那个节点。</string>
+    <string name="disclosure_host_servers">你连接的那些节点</string>
+    <string name="disclosure_never_title">它从不发送什么</string>
+    <string name="disclosure_never">没有统计、没有遥测、没有崩溃上报、没有广告标识符、没有账号。没有任何东西能标识你的安装，也不存在属于这个应用的、会收集你信息的服务器。</string>
 </resources>

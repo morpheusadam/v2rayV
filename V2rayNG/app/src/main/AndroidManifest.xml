@@ -359,6 +359,11 @@
           Exposes exactly one cache subdirectory, so the installed APK can be handed to a
           chat app. See ShareAppHandler and res/xml/file_paths.xml.
         -->
+        <activity
+            android:name=".ui.DisclosureActivity"
+            android:exported="false"
+            android:label="@string/title_disclosure" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
