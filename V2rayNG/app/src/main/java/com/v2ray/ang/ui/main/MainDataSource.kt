@@ -84,8 +84,19 @@ interface MainDataSource : Closeable {
      */
     fun hasReadyServer(): Boolean
 
-    /** Starts the tunnel on [guid], selecting it first. */
+    /** Starts the tunnel on [guid], selecting it first. Does nothing if one is already up. */
     fun startTunnel(guid: String)
+
+    /**
+     * Moves a *running* tunnel onto [guid].
+     *
+     * Distinct from [startTunnel] because starting is refused while the core is running: the
+     * daemon answers "already running" and keeps serving the old config, so selecting a
+     * different server and starting again changes the selection and nothing else. Switching
+     * has to go through the service's restart message, which stops the core and brings it
+     * back up on whatever is selected by then.
+     */
+    fun restartTunnel(guid: String)
 
     /** Keeps the periodic run that refills the reserve of ready servers scheduled. */
     fun scheduleAutoModeRefresh()

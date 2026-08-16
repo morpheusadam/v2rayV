@@ -255,7 +255,7 @@ class MainViewModel(
                 // that down to install a better server is not a trade anybody asked for.
                 if (connectedByThisRun && uiState.value.isRunning) {
                     connectedByThisRun = false
-                    dataSource.startTunnel(event.guid)
+                    dataSource.restartTunnel(event.guid)
                 }
                 refreshSelectedGuid()
             }
@@ -937,10 +937,12 @@ class MainViewModel(
                 is AutoModeReserve.Next.Server -> {
                     dataSource.setSelectServer(next.guid)
                     refreshSelectedGuid()
-                    // Restarted rather than merely selected: changing the selection under
-                    // a running tunnel changes nothing the user can feel.
+                    // Restarted rather than merely selected: changing the selection under a
+                    // running tunnel changes nothing the user can feel. startTunnel was the
+                    // wrong call for that, and silently so, since the daemon refuses to start
+                    // a core that is already running and goes on serving the old server.
                     if (uiState.value.isRunning) {
-                        dataSource.startTunnel(next.guid)
+                        dataSource.restartTunnel(next.guid)
                     }
                 }
 

@@ -299,6 +299,14 @@ class MainRepository(
         LauncherManager.startService(app, guid)
     }
 
+    override fun restartTunnel(guid: String) {
+        MmkvManager.setSelectServer(guid)
+        // The same path SmartSwitch and the notification's restart button take. The service
+        // stops the core, waits, and starts again on whatever is selected by then, which is
+        // why the selection is written first.
+        MessageHelper.sendMsg2Service(app, AppConfig.MSG_STATE_RESTART, "")
+    }
+
     override fun scheduleAutoModeRefresh() {
         AutoModeScheduler.schedule(app)
     }
