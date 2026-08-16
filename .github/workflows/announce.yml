@@ -68,9 +68,57 @@ jobs:
           echo "HTTP ${HTTP}"
           if [ "${HTTP}" != "200" ]; then
             # The token is in this job's environment, so only Telegram's own error text is
-            # printed — never the request that carried it.
+            # printed, never the request that carried it.
             echo "Telegram rejected the post:"
             cat /tmp/tg.json
             exit 1
           fi
           echo "Announced ${TAG}."
+
+      - name: Upload the APK to the channel
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${TOKEN:-}" ] || [ -z "${CHAT:-}" ]; then
+            exit 0
+          fi
+
+          mkdir -p /tmp/apk
+          # arm64-v8a only, and that is a deliberate limit rather than an oversight. A bot may
+          # upload at most 50 MB; the per-ABI builds are around 32 MB and the universal one is
+          # nearer 70, so the universal build cannot go this way at all. arm64-v8a is what
+          # essentially every phone since about 2018 runs, and the rest are one link away.
+          gh release download "${TAG}" -R "${REPO}" -p '*arm64-v8a*.apk' -D /tmp/apk --clobber
+
+          APK=$(find /tmp/apk -name '*.apk' | head -n 1)
+          if [ -z "${APK:-}" ]; then
+            echo "No arm64-v8a APK on this release; nothing to upload."
+            exit 0
+          fi
+
+          SIZE=$(stat -c%s "$APK")
+          echo "Uploading $(basename "$APK") (${SIZE} bytes)"
+          if [ "$SIZE" -gt 49000000 ]; then
+            echo "Over Telegram's 50 MB bot limit; leaving it on the release page."
+            exit 0
+          fi
+
+          HTTP=$(curl -sS -o /tmp/tg2.json -w '%{http_code}' \
+            --max-time 600 \
+            -X POST "https://api.telegram.org/bot${TOKEN}/sendDocument" \
+            --form-string "chat_id=${CHAT}" \
+            --form-string "caption=v2rayV ${TAG} · نسخه arm64-v8a" \
+            --form "document=@${APK}")
+
+          if [ "${HTTP}" != "200" ]; then
+            echo "Telegram rejected the file:"
+            cat /tmp/tg2.json
+            exit 1
+          fi
+          echo "Uploaded $(basename "$APK")."
