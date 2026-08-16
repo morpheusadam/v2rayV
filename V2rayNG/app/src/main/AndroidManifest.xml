@@ -55,9 +55,20 @@
     -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!--
+      allowBackup is off, unlike upstream. Auto-backup copies this app's private storage —
+      the subscription URLs and the whole server list — into the user's Google account, and
+      makes the same data pullable over adb wherever that is enabled. For a client whose
+      users are in places where possessing that list is itself the problem, "your servers are
+      in someone's cloud" is not an acceptable default.
+
+      The in-app Backup/Restore screen is unaffected: it writes a file the user asked for, to
+      a place the user picked.
+    -->
     <application
         android:name=".AngApplication"
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:banner="@mipmap/ic_banner"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
