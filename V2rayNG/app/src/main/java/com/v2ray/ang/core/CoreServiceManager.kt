@@ -12,6 +12,7 @@ import android.system.OsConstants
 import androidx.core.content.ContextCompat
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
+import com.v2ray.ang.automode.AutoModeHandover
 import com.v2ray.ang.contracts.IDialerService
 import com.v2ray.ang.contracts.ServiceControl
 import com.v2ray.ang.dto.OutboundTrafficStat
@@ -231,8 +232,35 @@ object CoreServiceManager {
         networkMonitor = NetworkMonitor(
             connectivity = connectivity,
             onUnderlyingNetworksChanged = { networks -> serviceControl?.get()?.setUnderlyingNetworks(networks) },
-            onHandover = { reloadCore() },
+            onHandover = { reason -> onUpstreamChanged(reason) },
         ).also { it.register() }
+    }
+
+    /**
+     * The upstream network moved. Two separate things have to happen, in this order.
+     *
+     * The reload is unconditional: outbound server domains are resolved while the config is built,
+     * and an address resolved on a network that is gone can be unusable on the new one, so the
+     * core is rebuilt whether or not the old server turns out to be fine.
+     *
+     * Then the result is checked. A reload restores the core, not the connection — the server that
+     * worked on home wifi may be blocked or unrouteable from a mobile carrier, and the difference
+     * is invisible from inside the core, which reports itself as running either way. Asking costs
+     * one request; not asking costs the user a tunnel that says connected and carries nothing.
+     */
+    private fun onUpstreamChanged(reason: String) {
+        if (!reloadCore()) return
+
+        // Read after the reload rather than captured when the monitor was built: the callback
+        // outlives any one Service instance, and holding one here would keep a stopped service
+        // alive for as long as the monitor is registered.
+        val service = getService() ?: return
+
+        try {
+            AutoModeHandover.onNetworkChanged(service, reason)
+        } catch (e: Exception) {
+            LogUtil.e(AppConfig.TAG, "StartCore-Manager: Failed to recheck the tunnel after a handover", e)
+        }
     }
 
     /**

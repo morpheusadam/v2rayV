@@ -90,6 +90,24 @@ object AutoModeBaseline {
             measured
         }
 
+    /**
+     * Drops the stored measurement, so the next run takes a fresh one.
+     *
+     * [networkKey] is coarse on purpose, and that coarseness has a cost here: moving between
+     * two wifi networks, or between two cells of one operator, keeps the key identical while
+     * the line underneath is a different line entirely. A handover knows something the key
+     * cannot express, so it says so directly rather than hoping the key noticed.
+     */
+    fun invalidate() {
+        val store = AutoModeSourceManager.getStore()
+        if (store.baselineMillis == 0L && store.baselineNetwork.isEmpty()) return
+        store.baselineMbps = 0.0
+        store.baselineMillis = 0
+        store.baselineNetwork = ""
+        AutoModeSourceManager.save()
+        LogUtil.i(AppConfig.TAG, "AutoMode: baseline dropped, the line changed")
+    }
+
     private fun isFresh(store: AutoModeStore, network: String): Boolean =
         store.baselineMbps >= MIN_CREDIBLE_MBPS
             && store.baselineNetwork == network
