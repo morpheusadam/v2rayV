@@ -53,17 +53,18 @@ actually fast enough for you.</b></p>
 ---
 
 > [!NOTE]
-> **Early days.** Auto Mode is verified end to end on a real device — power press to
-> connected in about 80 seconds on a cold install. Signed APKs are on the
-> [Releases](../../releases) page. The censored-network fallback (CDN mirrors → discovered
-> proxies) compiles and is unit-tested, but has not been exercised on a network that actually
-> blocks GitHub.
+> **Early days.** Auto Mode is verified end to end on a real device. Signed APKs are on the
+> [Releases](../../releases) page. The censored-network fallback (an optional mirror →
+> discovered proxies) compiles and is unit-tested, but has not been exercised on a network
+> that actually blocks GitHub.
 
 ## Contents
 
 [Why](#why-this-exists) · [Auto Mode](#auto-mode) · [What makes it work](#the-decisions-that-carry-the-whole-thing) ·
 [When the internet is blocked](#reaching-the-internet-when-the-internet-is-blocked) ·
 [A run, end to end](#a-run-end-to-end) · [Dashboard](#the-dashboard) ·
+[In the background](#what-it-does-while-you-are-not-looking) ·
+[What it does not send](#what-it-does-not-send) ·
 [Install](#install) · [Build](#building-from-source) · [Layout](#project-layout) ·
 [Roadmap](#roadmap) · [Credits](#credits-and-licence)
 
@@ -226,6 +227,32 @@ dismissed all end the same way — an empty slot.
 
 ---
 
+## What it does while you are not looking
+
+| | |
+|---|---|
+| **Connects on the first thing that works, then upgrades** | Measuring honestly takes about eighty seconds, and a user who just pressed a button should not spend them offline. The first server proved to carry a real request connects immediately; the run continues and replaces it once something has been measured. The provisional pick is itself in the speed test, so the usual outcome is that it wins its own slot and nothing moves. |
+| **Notices when the line underneath moves** | Wi-Fi to mobile data, or a new address from the same carrier. It rebuilds the core and then asks the tunnel for a real request, because a core that reports itself running is not the same claim as a connection that works. |
+| **Says when the clock is the problem** | VMess and VLESS authenticate with a timestamp, so a drifted clock fails against every server and looks exactly like several hundred dead ones. The skew is read from the `Date` header of requests already being made. |
+| **Keeps a reserve** | Ten tested servers, refreshed on a schedule and never while the tunnel is up. |
+
+---
+
+## What it does not send
+
+No analytics, no telemetry, no crash reporting, no advertising identifier, no account. There
+is no server belonging to this app that collects anything.
+
+**About → What this app sends** lists every host it contacts, why, and when, built from the
+constants that govern the behaviour so the page cannot drift from the code. All of it is
+checkable in a packet capture.
+
+Android's auto-backup is off, which upstream leaves on. It copies an app's private storage
+into the user's Google account, and for this app that storage is the subscription URLs and
+the entire server list.
+
+---
+
 ## Install
 
 Signed APKs are on the [Releases](../../releases) page — one per ABI, plus a `universal`
@@ -375,6 +402,7 @@ build it yourself; that is the point of the licence.
 - [ ] Revisit `acceptFraction = 0.70`, currently set on judgement rather than evidence.
 - [ ] Refresh the bundled `automode_*.txt` snapshots each release — they go stale.
 - [x] First tagged release.
+- [x] Connect without waiting for the full measurement.
 - [ ] Get listed on IzzyOnDroid, so updates arrive through an F-Droid client rather than by
       remembering to check a Releases page.
 
