@@ -51,7 +51,10 @@ android {
         applicationId = "com.v2rayv.app"
         minSdk = 24
         targetSdk = 37
-        versionCode = 744
+        // The name stays at 2.3.4 because this is that release corrected, not a successor.
+        // The code still has to move: Android compares codes, not names, and an install of
+        // the earlier 744 will not accept a replacement that claims to be the same build.
+        versionCode = 745
         versionName = "2.3.4"
 
         val abiFilterList = (properties["ABI_FILTERS"] as? String)?.split(';')
@@ -206,6 +209,16 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = true
+        }
+    }
+
+    testOptions {
+        unitTests {
+            // Unit tests run against a stub android.jar whose every method throws unless this
+            // is set. That turns any call into android.util.Log — which LogUtil makes from
+            // inside catch blocks all over this codebase — into a thrown error, so a test
+            // covering an error path fails on the logging rather than on the behaviour.
+            isReturnDefaultValues = true
         }
     }
 

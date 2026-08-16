@@ -213,11 +213,23 @@ object Utils {
      */
     private fun isIpv6Address(value: String): Boolean {
         var addr = value
-        if (addr.startsWith("[") && addr.endsWith("]")) {
-            addr = addr.drop(1).dropLast(1)
+        if (addr.startsWith("[")) {
+            // Brackets exist precisely so a port can follow, and "[::1]" only ever appears
+            // written that way when one does. Requiring the string to *end* in "]" therefore
+            // rejected every address that had the thing brackets are for — "[::1]:80" was
+            // not an IP address as far as this was concerned.
+            val close = addr.lastIndexOf(']')
+            if (close < 0) return false
+            val trailing = addr.substring(close + 1)
+            if (trailing.isNotEmpty() && trailing.toPort() == null) return false
+            addr = addr.substring(1, close)
         }
         return IPV6_REGEX.matches(addr)
     }
+
+    /** ":80" as 80, and null for anything that is not a port following a bracketed address. */
+    private fun String.toPort(): Int? =
+        takeIf { it.startsWith(":") }?.drop(1)?.toIntOrNull()?.takeIf { it in 0..65535 }
 
     /**
      * Check if a string is a CoreDNS address.

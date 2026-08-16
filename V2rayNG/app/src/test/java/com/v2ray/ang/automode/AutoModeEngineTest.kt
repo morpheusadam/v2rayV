@@ -174,13 +174,18 @@ class AutoModeEngineTest {
     }
 
     @Test
-    fun `a label from a previous run is stripped before relabelling`() {
-        assertEquals("Frankfurt 01", engine.stripRank("#2 1.4MB/s · 320ms · Frankfurt 01"))
+    fun `a label is built from what was measured, never from the provider's remark`() {
+        val advert = measured("nl", 1.4, 320, remarks = "🇳🇱 JOIN @somechannel — permanent connection")
+        val label = engine.label(1, advert, "NL")
+
+        assertEquals("#2 1.4MB/s · 320ms · NL", label)
+        assertTrue("the provider's text must not survive", !label.contains("JOIN"))
     }
 
     @Test
-    fun `a remark that merely looks like a label is left alone`() {
-        assertEquals("#1 best server", engine.stripRank("#1 best server"))
-        assertEquals("", engine.stripRank(null))
+    fun `a label leaves the country out rather than inventing one`() {
+        val unknown = measured("x", 2.1, 180)
+        assertEquals("#3 2.1MB/s · 180ms", engine.label(2, unknown, null))
+        assertEquals("#3 2.1MB/s · 180ms", engine.label(2, unknown, ""))
     }
 }

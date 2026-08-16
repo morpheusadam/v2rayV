@@ -902,9 +902,13 @@ class AutoModeEngine(
 
         val keptGuids = mutableListOf<String>()
         winners.forEachIndexed { index, winner ->
+            // The measured exit country when there is one, and the provider's claim only as a
+            // fallback — a country shown to the user should mean where the traffic came out,
+            // not where a remark said it would.
+            val country = winner.exitCountry ?: CountryHint.fromRemark(winner.profile.remarks)
             val profile = winner.profile.copy(
                 subscriptionId = TOP_GROUP_ID,
-                remarks = "#${index + 1} ${formatSpeed(winner.speedMbps)} · ${winner.delayMillis}ms · ${stripRank(winner.profile.remarks)}",
+                remarks = label(index, winner, country),
             )
 
             // Three ways a guid can be settled, in order of precedence:
@@ -925,11 +929,7 @@ class AutoModeEngine(
             MmkvManager.encodeServerConfig(guid, profile)
             MmkvManager.encodeServerTestDelayMillis(guid, winner.delayMillis)
             speeds[guid] = winner.speedMbps
-            // The measured exit country when there is one, and the provider's claim only
-            // as a fallback — a flag on the dashboard should mean where the traffic came
-            // out, not where a remark said it would.
-            (winner.exitCountry ?: CountryHint.fromRemark(winner.profile.remarks))
-                ?.let { countries[guid] = it }
+            country?.let { countries[guid] = it }
             keptGuids.add(guid)
         }
 
@@ -954,12 +954,26 @@ class AutoModeEngine(
     private fun formatSpeed(mbPerSecond: Double): String =
         if (mbPerSecond <= 0) "?" else String.format(java.util.Locale.US, "%.1fMB/s", mbPerSecond)
 
-    private val rankRegex = Regex("^#\\d+\\s+\\S+\\s+·\\s+-?\\d+ms\\s+·\\s+(.*)$")
-
-    /** Strip a label this engine added on a previous run before re-labelling. */
-    fun stripRank(remarks: String?): String {
-        val text = remarks.orEmpty()
-        return rankRegex.find(text)?.groupValues?.get(1) ?: text
+    /**
+     * What a winning server is called once it reaches the reserve.
+     *
+     * The provider's own remark used to be carried through to here, and it is the one part of
+     * a public subscription written for the publisher rather than the user: overwhelmingly an
+     * advert — a channel to join, a site to visit — often in a script and language the rest of
+     * the app does not use. It was never load-bearing. Everything worth knowing about one of
+     * these servers is measured rather than claimed, and all of it is already in this line.
+     *
+     * The country segment is dropped rather than filled with a placeholder when nothing could
+     * be measured: "#3 2.1MB/s · 180ms" is a complete description of a server whose exit is
+     * unknown, whereas a dash pretending to be a country is not.
+     */
+    fun label(index: Int, winner: AutoModeMeasurement, country: String?): String = buildString {
+        append("#${index + 1} ")
+        append(formatSpeed(winner.speedMbps))
+        append(" · ${winner.delayMillis}ms")
+        if (!country.isNullOrBlank()) {
+            append(" · $country")
+        }
     }
 
     //endregion stages
