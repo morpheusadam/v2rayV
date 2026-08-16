@@ -80,20 +80,71 @@ object AutoModeNetwork {
         Regex("^https://raw\\.githubusercontent\\.com/([^/]+)/([^/]+)/(?:refs/heads/)?([^/]+)/(.+)$")
 
     /**
-     * Alternative hostnames serving the same repository file.
+     * One alternative host serving the same repository file.
      *
-     * These are ordinary CDNs rather than circumvention tools; they are useful here only
-     * because a block list that names `raw.githubusercontent.com` usually does not name
-     * them too. A route that stops working simply falls through to the next.
+     * [name] is what the settings screen shows; [operator] is the honest answer to "who sees
+     * that I asked for this", which is the only question that matters when choosing one of
+     * these and the one a bare hostname does not answer.
      */
-    fun mirrorsFor(url: String): List<String> {
+    data class Mirror(
+        val name: String,
+        val operator: String,
+        val template: (user: String, repo: String, ref: String, path: String) -> String,
+    )
+
+    /**
+     * The mirrors on offer, in the order the settings screen lists them.
+     *
+     * First is this project's own, because it is the only one that is not merely another way of
+     * asking GitHub: it answers from its own storage and refreshes in the background, so it
+     * survives GitHub being unreachable rather than only GitHub being blocked from the user's
+     * network. The CDNs below it are ordinary CDNs rather than circumvention tools, useful here
+     * only because a block list naming `raw.githubusercontent.com` usually does not name them.
+     */
+    val MIRRORS: List<Mirror> = listOf(
+        Mirror(
+            name = "v2rayV mirror",
+            operator = "this app's author",
+        ) { user, repo, ref, path -> "https://cdn.lavzen.com/gh/$user/$repo@$ref/$path" },
+        Mirror(
+            name = "jsDelivr",
+            operator = "jsDelivr, a public CDN",
+        ) { user, repo, ref, path -> "https://cdn.jsdelivr.net/gh/$user/$repo@$ref/$path" },
+        Mirror(
+            name = "raw.githack",
+            operator = "githack, a public CDN",
+        ) { user, repo, ref, path -> "https://raw.githack.com/$user/$repo/$ref/$path" },
+    )
+
+    /**
+     * The chosen mirror for [url], or nothing at all.
+     *
+     * Empty unless the user switched mirrors on, which is the whole point: see
+     * [AutoModeStore.mirrorsEnabled]. Empty too for a host this does not know how to rewrite,
+     * since a mirror is only meaningful for a URL whose content is addressable elsewhere.
+     *
+     * One mirror rather than a ladder of all of them. Trying every mirror in turn discloses the
+     * request to every operator on the list to save one failed fetch, which is a bad trade for
+     * exactly the user this feature exists for.
+     */
+    fun mirrorsFor(url: String, enabled: Boolean = mirrorsEnabled(), index: Int = mirrorIndex()): List<String> {
+        if (!enabled) return emptyList()
         val m = rawUrlRegex.find(url) ?: return emptyList()
         val (user, repo, ref, path) = m.destructured
-        return listOf(
-            "https://cdn.jsdelivr.net/gh/$user/$repo@$ref/$path",
-            "https://raw.githack.com/$user/$repo/$ref/$path",
-            "https://gitcdn.link/cdn/$user/$repo/$ref/$path",
-        )
+        val mirror = MIRRORS.getOrNull(index) ?: MIRRORS.first()
+        return listOf(mirror.template(user, repo, ref, path))
+    }
+
+    private fun mirrorsEnabled(): Boolean = try {
+        AutoModeSourceManager.getStore().mirrorsEnabled
+    } catch (e: Exception) {
+        false
+    }
+
+    private fun mirrorIndex(): Int = try {
+        AutoModeSourceManager.getStore().mirrorIndex
+    } catch (e: Exception) {
+        0
     }
 
     /**
@@ -104,8 +155,12 @@ object AutoModeNetwork {
      *        [AutoModeStore.lastRouteIndex]. Out-of-range values are ignored rather than
      *        rejected, so a stored index that no longer names anything is harmless.
      */
-    fun routes(url: String, preferred: Int = 0): List<String> {
-        val all = listOf(url) + mirrorsFor(url)
+    fun routes(
+        url: String,
+        preferred: Int = 0,
+        mirrors: List<String> = mirrorsFor(url),
+    ): List<String> {
+        val all = listOf(url) + mirrors
         if (preferred <= 0 || preferred >= all.size) {
             return all
         }

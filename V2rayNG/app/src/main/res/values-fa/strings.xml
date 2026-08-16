@@ -579,4 +579,10 @@
     <string name="dashboard_automode_hint">لینک‌ها را تست کن و سریع‌ترین سرورها را نگه دار</string>
     <string name="dashboard_open_servers">فهرست سرورها</string>
 
+    <string name="automode_section_mirrors">میرورها</string>
+    <string name="automode_mirrors_label">وقتی میزبان لیست بسته است از میرور استفاده کن</string>
+    <string name="automode_mirrors_hint">به‌صورت پیش‌فرض خاموش. لیست‌های subscription روی یک میزبان هستند؛ اگر بسته باشد، اپ صرفاً موفق به گرفتنشان نمی‌شود.
+
+یک میرور همان فایل‌ها را از جای دیگری می‌دهد — ولی هرکس که آن را می‌گرداند می‌فهمد که از آدرس تو درخواست لیست subscription آمده. این همیشه واقعیت بی‌خطری نیست، پس تصمیمش با توست نه با ما. فقط با همان میروری که انتخاب می‌کنی تماس گرفته می‌شود.</string>
+    <string name="automode_mirrors_operator">درخواست‌ها می‌روند به: %1$s</string>
 </resources>

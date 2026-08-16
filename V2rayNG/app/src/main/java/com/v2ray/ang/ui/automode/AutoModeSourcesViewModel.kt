@@ -20,6 +20,8 @@ data class AutoModeSettingsState(
     val runCount: Int = 0,
     val sourcesPerRun: Int = 8,
     val smartSwitch: Boolean = false,
+    val mirrorsEnabled: Boolean = false,
+    val mirrorIndex: Int = 0,
 )
 
 class AutoModeSourcesViewModel : ViewModel() {
@@ -59,6 +61,8 @@ class AutoModeSourcesViewModel : ViewModel() {
                 runCount = store.runCount,
                 sourcesPerRun = store.sourcesPerRun,
                 smartSwitch = store.smartSwitch,
+                mirrorsEnabled = store.mirrorsEnabled,
+                mirrorIndex = store.mirrorIndex,
             )
         }
     }
@@ -93,6 +97,20 @@ class AutoModeSourcesViewModel : ViewModel() {
     fun setSmartSwitch(enabled: Boolean) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) { AutoModeSourceManager.setSmartSwitch(enabled) }
+            refresh()
+        }
+    }
+
+    fun setMirrorsEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { AutoModeSourceManager.setMirrorsEnabled(enabled) }
+            refresh()
+        }
+    }
+
+    fun setMirrorIndex(index: Int) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { AutoModeSourceManager.setMirrorIndex(index) }
             refresh()
         }
     }

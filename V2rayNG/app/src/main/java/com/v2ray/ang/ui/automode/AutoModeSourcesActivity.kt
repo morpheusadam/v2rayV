@@ -36,6 +36,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.v2ray.ang.R
+import com.v2ray.ang.automode.AutoModeNetwork
 import com.v2ray.ang.automode.AutoModeSource
 import com.v2ray.ang.automode.CountryHint
 import com.v2ray.ang.extension.toast
@@ -162,6 +163,51 @@ private fun AutoModeSourcesScreen(
                     text = stringResource(R.string.automode_smart_switch_hint),
                     style = MaterialTheme.typography.bodySmall,
                 )
+                Spacer(Modifier.height(8.dp))
+                HorizontalDivider()
+            }
+
+            item {
+                SectionHeader(stringResource(R.string.automode_section_mirrors))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.automode_mirrors_label),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Switch(
+                        checked = state.mirrorsEnabled,
+                        onCheckedChange = { viewModel.setMirrorsEnabled(it) },
+                    )
+                }
+                Text(
+                    text = stringResource(R.string.automode_mirrors_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                if (state.mirrorsEnabled) {
+                    Spacer(Modifier.height(8.dp))
+                    // Named with their operator rather than their hostname. Choosing a mirror
+                    // is choosing who learns that you asked for a subscription list, and a
+                    // bare domain does not tell anyone that.
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        AutoModeNetwork.MIRRORS.forEachIndexed { index, mirror ->
+                            FilterChip(
+                                selected = state.mirrorIndex == index,
+                                onClick = { viewModel.setMirrorIndex(index) },
+                                label = { Text(mirror.name) },
+                            )
+                        }
+                    }
+                    AutoModeNetwork.MIRRORS.getOrNull(state.mirrorIndex)?.let { mirror ->
+                        Text(
+                            text = stringResource(R.string.automode_mirrors_operator, mirror.operator),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
                 Spacer(Modifier.height(8.dp))
                 HorizontalDivider()
             }

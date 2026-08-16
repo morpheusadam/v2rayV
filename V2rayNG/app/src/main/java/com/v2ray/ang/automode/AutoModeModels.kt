@@ -151,6 +151,28 @@ data class AutoModeStore(
      * it is. See [SmartSwitch].
      */
     var smartSwitch: Boolean = false,
+
+    /**
+     * Whether the mirror ladder may be walked at all when the list host cannot be reached.
+     *
+     * Off by default, and this is a privacy decision rather than a technical one. Fetching the
+     * lists from GitHub tells GitHub that somebody wanted them. Fetching them from a mirror
+     * tells whoever runs that mirror the same thing, and the mirrors are third parties the user
+     * never chose — a CDN, or the author of this app. Where this software is most useful, "who
+     * asked for a subscription list, and from which address" is not a harmless fact, and it is
+     * not ours to disclose on the user's behalf because it made a fetch more likely to succeed.
+     *
+     * So the fallback exists, works, and stays switched off until somebody decides the trade is
+     * worth it. With it off the app fetches only from the host the list actually lives on.
+     */
+    var mirrorsEnabled: Boolean = false,
+
+    /**
+     * Which mirror to use, as an index into [AutoModeNetwork.MIRRORS]. Out-of-range values fall
+     * back to the first entry rather than disabling the feature, so a stored index left behind
+     * by a build that offered more mirrors does not silently turn this off.
+     */
+    var mirrorIndex: Int = 0,
 )
 
 /** Result of one Auto Mode run, for the summary message. */

@@ -7,20 +7,56 @@ import org.junit.Test
 
 class AutoModeNetworkTest {
 
+    /**
+     * The default. A mirror discloses the request to whoever runs it, so nothing is offered
+     * until the user has said so — see [com.v2ray.ang.automode.AutoModeStore.mirrorsEnabled].
+     */
     @Test
-    fun `offers CDN mirrors for a github raw url`() {
-        val mirrors = AutoModeNetwork.mirrorsFor(
-            "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/all.txt"
-        )
-
+    fun `offers no mirror until the user turns them on`() {
         assertEquals(
-            listOf(
-                "https://cdn.jsdelivr.net/gh/morpheusadam/v2ray-config@main/subs/all.txt",
-                "https://raw.githack.com/morpheusadam/v2ray-config/main/subs/all.txt",
-                "https://gitcdn.link/cdn/morpheusadam/v2ray-config/main/subs/all.txt",
-            ),
-            mirrors
+            emptyList<String>(),
+            AutoModeNetwork.mirrorsFor(subsUrl, enabled = false, index = 0)
         )
+    }
+
+    @Test
+    fun `offers the chosen mirror once they are on`() {
+        assertEquals(
+            listOf("https://cdn.lavzen.com/gh/morpheusadam/v2ray-config@main/subs/all.txt"),
+            AutoModeNetwork.mirrorsFor(subsUrl, enabled = true, index = 0)
+        )
+        assertEquals(
+            listOf("https://cdn.jsdelivr.net/gh/morpheusadam/v2ray-config@main/subs/all.txt"),
+            AutoModeNetwork.mirrorsFor(subsUrl, enabled = true, index = 1)
+        )
+    }
+
+    /**
+     * Only the chosen one. Walking the whole list would tell every operator on it what was
+     * asked for, to save a single failed fetch.
+     */
+    @Test
+    fun `offers exactly one mirror, never the whole list`() {
+        AutoModeNetwork.MIRRORS.indices.forEach { i ->
+            assertEquals(1, AutoModeNetwork.mirrorsFor(subsUrl, enabled = true, index = i).size)
+        }
+    }
+
+    /**
+     * A stored index from a build that offered more mirrors must not silently disable the
+     * feature the user switched on.
+     */
+    @Test
+    fun `an index that names nothing falls back to the first mirror`() {
+        val first = AutoModeNetwork.mirrorsFor(subsUrl, enabled = true, index = 0)
+        assertEquals(first, AutoModeNetwork.mirrorsFor(subsUrl, enabled = true, index = 99))
+        assertEquals(first, AutoModeNetwork.mirrorsFor(subsUrl, enabled = true, index = -1))
+    }
+
+    /** This project's own mirror is the one offered first; see the ordering rationale there. */
+    @Test
+    fun `this project's own mirror is first`() {
+        assertTrue(AutoModeNetwork.MIRRORS.first().name.contains("v2rayV"))
     }
 
     /**
@@ -30,7 +66,9 @@ class AutoModeNetworkTest {
     @Test
     fun `normalises the refs heads form when building mirrors`() {
         val mirrors = AutoModeNetwork.mirrorsFor(
-            "https://raw.githubusercontent.com/user/repo/refs/heads/main/config.txt"
+            "https://raw.githubusercontent.com/user/repo/refs/heads/main/config.txt",
+            enabled = true,
+            index = 0,
         )
 
         assertTrue(mirrors.first().endsWith("/gh/user/repo@main/config.txt"))
@@ -38,16 +76,31 @@ class AutoModeNetworkTest {
 
     @Test
     fun `has no mirrors for a host it does not know how to rewrite`() {
-        assertEquals(emptyList<String>(), AutoModeNetwork.mirrorsFor("https://example.com/list.txt"))
+        assertEquals(
+            emptyList<String>(),
+            AutoModeNetwork.mirrorsFor("https://example.com/list.txt", enabled = true, index = 0)
+        )
     }
 
     private val subsUrl = "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/all.txt"
 
+    /** Two mirrors' worth of ladder, standing in for whatever the user has chosen. */
+    private val chosen = listOf("https://mirror.example/a.txt", "https://mirror.example/b.txt")
+
+    /**
+     * With mirrors off — the default — the ladder is one rung. The app asks the host the list
+     * actually lives on, and nobody else.
+     */
+    @Test
+    fun `the ladder is just the host until mirrors are turned on`() {
+        assertEquals(listOf(subsUrl), AutoModeNetwork.routes(subsUrl, mirrors = emptyList()))
+    }
+
     @Test
     fun `the ladder starts at the host and falls through to the mirrors`() {
-        val routes = AutoModeNetwork.routes(subsUrl)
+        val routes = AutoModeNetwork.routes(subsUrl, mirrors = chosen)
 
-        assertEquals(4, routes.size)
+        assertEquals(3, routes.size)
         assertEquals(subsUrl, routes.first())
     }
 
@@ -58,11 +111,11 @@ class AutoModeNetworkTest {
      */
     @Test
     fun `a remembered rung is tried first without reshuffling the rest`() {
-        val all = AutoModeNetwork.routes(subsUrl)
-        val reordered = AutoModeNetwork.routes(subsUrl, preferred = 2)
+        val all = AutoModeNetwork.routes(subsUrl, mirrors = chosen)
+        val reordered = AutoModeNetwork.routes(subsUrl, preferred = 2, mirrors = chosen)
 
         assertEquals(all[2], reordered.first())
-        assertEquals(listOf(all[0], all[1], all[3]), reordered.drop(1))
+        assertEquals(listOf(all[0], all[1]), reordered.drop(1))
     }
 
     /**
@@ -71,17 +124,20 @@ class AutoModeNetworkTest {
      */
     @Test
     fun `an out of range memory is ignored`() {
-        val all = AutoModeNetwork.routes(subsUrl)
+        val all = AutoModeNetwork.routes(subsUrl, mirrors = chosen)
 
-        assertEquals(all, AutoModeNetwork.routes(subsUrl, preferred = 99))
-        assertEquals(all, AutoModeNetwork.routes(subsUrl, preferred = -1))
-        assertEquals(all, AutoModeNetwork.routes(subsUrl, preferred = 0))
+        assertEquals(all, AutoModeNetwork.routes(subsUrl, preferred = 99, mirrors = chosen))
+        assertEquals(all, AutoModeNetwork.routes(subsUrl, preferred = -1, mirrors = chosen))
+        assertEquals(all, AutoModeNetwork.routes(subsUrl, preferred = 0, mirrors = chosen))
     }
 
     /** A URL with no mirrors is a one-rung ladder whatever is remembered. */
     @Test
     fun `a host with no mirrors has nothing to reorder`() {
-        assertEquals(listOf("https://example.com/list.txt"), AutoModeNetwork.routes("https://example.com/list.txt", 2))
+        assertEquals(
+            listOf("https://example.com/list.txt"),
+            AutoModeNetwork.routes("https://example.com/list.txt", 2, mirrors = emptyList())
+        )
     }
 
     /**

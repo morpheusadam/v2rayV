@@ -605,4 +605,10 @@
     <string name="dashboard_automode_hint">Test your links and keep the fastest servers</string>
     <string name="dashboard_open_servers">Server list</string>
 
+    <string name="automode_section_mirrors">MIRRORS</string>
+    <string name="automode_mirrors_label">Use a mirror when the list host is blocked</string>
+    <string name="automode_mirrors_hint">Off by default. The subscription lists live on one host; if it is blocked, the app simply fails to fetch them.
+
+A mirror serves the same files from somewhere else — but whoever runs it then learns that your address asked for a subscription list. That is not always a harmless fact, so it is your call, not ours. Only the mirror you pick is ever contacted.</string>
+    <string name="automode_mirrors_operator">Requests go to: %1$s</string>
 </resources>

@@ -542,4 +542,10 @@
     <string name="connection_test_empty_message">无详细信息</string>
     <string name="value_unknown">未知</string>
 
+    <string name="automode_section_mirrors">镜像</string>
+    <string name="automode_mirrors_label">当列表主机被封锁时使用镜像</string>
+    <string name="automode_mirrors_hint">默认关闭。订阅列表放在一台主机上；如果它被封锁，应用就只是抓不到而已。
+
+镜像从别处提供同样的文件 —— 但运营镜像的人会因此知道，你的地址请求过一份订阅列表。这并不总是一件无害的事，所以这个决定该由你来做，而不是我们。只有你选中的那个镜像会被访问。</string>
+    <string name="automode_mirrors_operator">请求会发往：%1$s</string>
 </resources>

@@ -209,6 +209,16 @@ object AutoModeSourceManager {
         save()
     }
 
+    fun setMirrorsEnabled(enabled: Boolean) {
+        getStore().mirrorsEnabled = enabled
+        save()
+    }
+
+    fun setMirrorIndex(index: Int) {
+        getStore().mirrorIndex = index.coerceIn(0, AutoModeNetwork.MIRRORS.lastIndex)
+        save()
+    }
+
     fun setProtocolFilter(protocols: List<String>) {
         getStore().protocolFilter = protocols.toMutableList()
         save()

@@ -542,4 +542,10 @@
     <string name="connection_test_empty_message">подробности отсутствуют</string>
     <string name="value_unknown">неизвестно</string>
 
+    <string name="automode_section_mirrors">ЗЕРКАЛА</string>
+    <string name="automode_mirrors_label">Использовать зеркало, когда хост списков заблокирован</string>
+    <string name="automode_mirrors_hint">По умолчанию выключено. Списки подписок лежат на одном хосте; если он заблокирован, приложение просто не сможет их загрузить.
+
+Зеркало отдаёт те же файлы откуда-то ещё — но тот, кто им управляет, узнает, что с вашего адреса запросили список подписок. Это не всегда безобидный факт, поэтому решение ваше, а не наше. Обращение идёт только к тому зеркалу, которое вы выбрали.</string>
+    <string name="automode_mirrors_operator">Запросы уходят на: %1$s</string>
 </resources>
