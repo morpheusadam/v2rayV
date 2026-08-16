@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Only the one directory the share feature writes into. Deliberately not the whole cache,
+  and certainly not files-path: this app's private storage holds subscription URLs and the
+  server list, and a provider is a door other apps can be pointed at.
+-->
+<paths>
+    <cache-path name="share" path="share/" />
+</paths>

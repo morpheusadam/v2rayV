@@ -297,6 +297,9 @@ class MainViewModel(
     // ---------- Action handler ----------
     fun onAction(action: MainAction) {
         when (action) {
+            // Needs an Activity to start the chooser from, so MainActivity intercepts it
+            // before this ever sees it. Present only because the when is exhaustive.
+            MainAction.ShareApp -> Unit
             MainAction.Initialize -> initialize()
             MainAction.RefreshGroups -> setupGroupTab(forceRefresh = true)
             MainAction.TestAllServers -> testAllRealPing(true)

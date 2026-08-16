@@ -55,6 +55,12 @@ sealed interface MainAction {
     data class ShareQRCode(val guid: String) : MainAction
     data class ShareClipboard(val guid: String) : MainAction
     data class ShareFullContent(val guid: String) : MainAction
+
+    /**
+     * Hand the installed APK to the system share sheet. Not a config action: it shares the
+     * app rather than anything in it. See [com.v2ray.ang.handler.ShareAppHandler].
+     */
+    data object ShareApp : MainAction
     data object DismissQRCodeDialog : MainAction
 
     data class ImportBatchConfig(val configText: String) : MainAction

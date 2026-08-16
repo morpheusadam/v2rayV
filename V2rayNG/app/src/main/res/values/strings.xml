@@ -611,4 +611,5 @@
 
 A mirror serves the same files from somewhere else — but whoever runs it then learns that your address asked for a subscription list. That is not always a harmless fact, so it is your call, not ours. Only the mirror you pick is ever contacted.</string>
     <string name="automode_mirrors_operator">Requests go to: %1$s</string>
+    <string name="drawer_share_app">Give this app to someone</string>
 </resources>

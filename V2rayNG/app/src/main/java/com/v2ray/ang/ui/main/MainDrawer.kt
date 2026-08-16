@@ -83,6 +83,7 @@ fun MainDrawerContent(
     drawerState: DrawerState,
     onNavigate: (MainDestination) -> Unit,
     onOpenServers: () -> Unit,
+    onShareApp: () -> Unit = {},
 ) {
     val scrollState = rememberScrollState()
 
@@ -120,6 +121,12 @@ fun MainDrawerContent(
             }
 
             DrawerSection(stringResource(R.string.drawer_section_app))
+            // Not a MainDestination either: it opens the system share sheet rather than a
+            // screen. Placed first in this section because passing the file to somebody is
+            // how this app reaches people at all — there is no store listing to find it in.
+            DrawerRow(R.drawable.ic_share_24dp, stringResource(R.string.drawer_share_app)) {
+                onShareApp()
+            }
             aboutItems.forEach { item ->
                 DrawerRow(item.iconRes, stringResource(item.labelRes)) { onNavigate(item) }
             }

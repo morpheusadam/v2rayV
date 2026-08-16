@@ -548,4 +548,5 @@
 
 镜像从别处提供同样的文件 —— 但运营镜像的人会因此知道，你的地址请求过一份订阅列表。这并不总是一件无害的事，所以这个决定该由你来做，而不是我们。只有你选中的那个镜像会被访问。</string>
     <string name="automode_mirrors_operator">请求会发往：%1$s</string>
+    <string name="drawer_share_app">把这个应用给别人</string>
 </resources>

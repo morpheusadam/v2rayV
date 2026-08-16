@@ -77,6 +77,10 @@ fun MainScreen(
                     rootScope.launch { rootDrawerState.close() }
                     showServers = true
                 },
+                onShareApp = {
+                    rootScope.launch { rootDrawerState.close() }
+                    onAction(MainAction.ShareApp)
+                },
             )
         }
     ) {

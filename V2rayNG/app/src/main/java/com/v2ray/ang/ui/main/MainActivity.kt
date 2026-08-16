@@ -21,6 +21,7 @@ import com.v2ray.ang.extension.toast
 import com.v2ray.ang.extension.toastError
 import com.v2ray.ang.extension.toastSuccess
 import com.v2ray.ang.handler.AngConfigManager
+import com.v2ray.ang.handler.ShareAppHandler
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsChangeManager
 import com.v2ray.ang.handler.SettingsManager
@@ -116,11 +117,29 @@ class MainActivity : HelperBaseComponentActivity() {
                     is MainAction.EditServer -> editServer(action.guid, action.profile)
                     is MainAction.ShareClipboard -> shareToClipboard(action.guid)
                     is MainAction.ShareFullContent -> shareFullContentAsync(action.guid)
+                    MainAction.ShareApp -> shareApp()
                     else -> mainViewModel.onAction(action)
                 }
             },
             onNavigate = { route -> navigateTo(route) },
         )
+    }
+
+    /**
+     * Copying a thirty-megabyte file is not instant, so it happens off the main thread and
+     * the chooser is opened once there is something to put in it.
+     */
+    private fun shareApp() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val intent = ShareAppHandler.buildShareIntent(this@MainActivity)
+            withContext(Dispatchers.Main) {
+                if (intent == null) {
+                    toastError(R.string.toast_failure)
+                } else {
+                    startActivity(intent)
+                }
+            }
+        }
     }
 
     private fun shareToClipboard(guid: String): Boolean =
