@@ -102,10 +102,14 @@ object AutoModeNetwork {
      * only because a block list naming `raw.githubusercontent.com` usually does not name them.
      */
     val MIRRORS: List<Mirror> = listOf(
+        // Plain static files rather than a jsDelivr-style path, because it is a plain static
+        // mirror: a cron job copies the repository's files into a directory and Apache serves
+        // them. The layout is kept identical to the repository's, so this is the upstream URL
+        // with the host swapped and nothing else — no mapping table to keep in step.
         Mirror(
             name = "v2rayV mirror",
             operator = "this app's author",
-        ) { user, repo, ref, path -> "https://cdn.lavzen.com/gh/$user/$repo@$ref/$path" },
+        ) { _, _, _, path -> "https://cdn.lavzen.com/$path" },
         Mirror(
             name = "jsDelivr",
             operator = "jsDelivr, a public CDN",

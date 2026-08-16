@@ -138,7 +138,7 @@ object AppConfig {
     // wholesale and unchanged, and there is no better page to send anyone to.
     const val APP_WIKI_MODE = "$GITHUB_URL/2dust/v2rayNG/wiki/Mode"
     const val APP_PRIVACY_POLICY = "$GITHUB_RAW_URL/$APP_REPO/master/CR.md"
-    const val TG_CHANNEL_URL = "https://t.me/github_2dust"
+    const val TG_CHANNEL_URL = "https://t.me/v2rayvpro"
     const val DELAY_TEST_URL = "https://www.gstatic.com/generate_204"
     const val DELAY_TEST_URL2 = "https://www.google.com/generate_204"
     const val OBSERVATORY_LEAST_PING_INTERVAL = "3m"

@@ -21,8 +21,10 @@ class AutoModeNetworkTest {
 
     @Test
     fun `offers the chosen mirror once they are on`() {
+        // A static mirror: the repository layout is reproduced under the host, so this is the
+        // upstream URL with the host swapped and nothing else.
         assertEquals(
-            listOf("https://cdn.lavzen.com/gh/morpheusadam/v2ray-config@main/subs/all.txt"),
+            listOf("https://cdn.lavzen.com/subs/all.txt"),
             AutoModeNetwork.mirrorsFor(subsUrl, enabled = true, index = 0)
         )
         assertEquals(
@@ -65,10 +67,12 @@ class AutoModeNetworkTest {
      */
     @Test
     fun `normalises the refs heads form when building mirrors`() {
+        // Checked on jsDelivr, whose URL carries the ref: the longer form must not leak into
+        // it. The static mirror drops the ref entirely, so it cannot show the bug.
         val mirrors = AutoModeNetwork.mirrorsFor(
             "https://raw.githubusercontent.com/user/repo/refs/heads/main/config.txt",
             enabled = true,
-            index = 0,
+            index = 1,
         )
 
         assertTrue(mirrors.first().endsWith("/gh/user/repo@main/config.txt"))
