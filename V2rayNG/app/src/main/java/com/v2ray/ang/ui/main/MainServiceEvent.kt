@@ -21,6 +21,9 @@ sealed class MainServiceEvent {
     /** A run has selected a server that clears the bar, mid-run. */
     data class AutoModeReady(val guid: String) : MainServiceEvent()
 
+    /** A measured server should take over from the unmeasured one the run connected on. */
+    data class AutoModeUpgrade(val guid: String) : MainServiceEvent()
+
     /** Live throughput from a measurement in flight. */
     data class AutoModeSpeed(val mbps: Double, val baseline: Boolean) : MainServiceEvent()
 

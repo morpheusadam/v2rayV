@@ -49,6 +49,13 @@ class AutoModeRunService : Service() {
     @Volatile
     private var engine: AutoModeEngine? = null
 
+    /**
+     * Whether this run has already connected the user to a server it had not measured. Read
+     * when a measured one turns up, to tell a first connection from a replacement.
+     */
+    @Volatile
+    private var connectedProvisionally = false
+
     @Volatile
     private var lastMessage: String = ""
 
@@ -181,6 +188,21 @@ class AutoModeRunService : Service() {
                 // Selecting here rather than in the UI process: the run already owns this
                 // decision, and the store is multi-process, so a UI that is not on screen
                 // does not stop the tunnel from becoming connectable.
+                MmkvManager.setSelectServer(guid)
+                // If the run already put the user on something unmeasured to end the wait,
+                // this is a replacement for it rather than a first connection, and the two
+                // mean opposite things to a tunnel that is already up.
+                val what =
+                    if (connectedProvisionally) AppConfig.MSG_AUTOMODE_UPGRADE
+                    else AppConfig.MSG_AUTOMODE_READY
+                MessageHelper.sendMsg2UI(this, what, guid)
+            },
+            onFirstUsable = { guid ->
+                connectedProvisionally = true
+                // Same path as a measured winner on purpose. Whether the tunnel actually
+                // comes up is the UI's decision either way — it only connects unprompted for
+                // a run the power button started — and routing the unmeasured server through
+                // a second mechanism would give that decision two places to be wrong.
                 MmkvManager.setSelectServer(guid)
                 MessageHelper.sendMsg2UI(this, AppConfig.MSG_AUTOMODE_READY, guid)
             }

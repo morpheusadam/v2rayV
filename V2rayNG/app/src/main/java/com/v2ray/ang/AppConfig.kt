@@ -227,6 +227,14 @@ object AppConfig {
      */
     const val MSG_SMART_SWITCH = 98
 
+    /**
+     * A measured server is ready to replace the unmeasured one the run connected on to end
+     * the wait. Distinct from [MSG_AUTOMODE_READY] because the two mean opposite things to a
+     * tunnel that is already up: READY must not disturb a connection the user made for
+     * themselves, whereas this only ever arrives for a connection this run made.
+     */
+    const val MSG_AUTOMODE_UPGRADE = 99
+
     /** Notification channel IDs and names. */
     // Use a new ID because Android does not let an app raise an existing channel's importance.
     const val RAY_NG_CHANNEL_ID = "CORE_M_CH_ID_V2"

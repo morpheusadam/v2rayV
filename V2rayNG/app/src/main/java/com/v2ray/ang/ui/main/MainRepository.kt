@@ -101,6 +101,10 @@ class MainRepository(
                     safeIntent.getStringExtra("content").orEmpty()
                 )
 
+                AppConfig.MSG_AUTOMODE_UPGRADE -> MainServiceEvent.AutoModeUpgrade(
+                    safeIntent.getStringExtra("content").orEmpty()
+                )
+
                 AppConfig.MSG_SMART_SWITCH -> MainServiceEvent.SmartSwitched(
                     safeIntent.getStringExtra("content").orEmpty()
                 )

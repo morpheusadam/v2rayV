@@ -102,6 +102,14 @@ class MainViewModel(
     @Volatile
     private var pendingAutoConnect: Boolean = false
 
+    /**
+     * Whether the tunnel currently up was brought up by this run's provisional connect, and
+     * may therefore be replaced when a measured server arrives. False for a connection the
+     * user made themselves, which a background refresh must never tear down.
+     */
+    @Volatile
+    private var connectedByThisRun: Boolean = false
+
     private val initialPageReady = CompletableDeferred<Unit>()
 
     // ---------- Service events ----------
@@ -137,7 +145,12 @@ class MainViewModel(
                 updateRunningState(false)
             }
 
-            MainServiceEvent.StateStopSuccess -> updateRunningState(false)
+            MainServiceEvent.StateStopSuccess -> {
+                // The tunnel this run put up is gone, so there is nothing left for a
+                // measured server to replace.
+                connectedByThisRun = false
+                updateRunningState(false)
+            }
             is MainServiceEvent.MeasureDelaySuccess -> {
                 _uiState.update { it.copy(statusText = event.content) }
             }
@@ -227,6 +240,21 @@ class MainViewModel(
                 // started deliberately must not connect the tunnel behind their back.
                 if (pendingAutoConnect && !uiState.value.isRunning) {
                     pendingAutoConnect = false
+                    connectedByThisRun = true
+                    dataSource.startTunnel(event.guid)
+                }
+                refreshSelectedGuid()
+            }
+
+            is MainServiceEvent.AutoModeUpgrade -> {
+                // The run connected on the first server that worked so the user did not sit
+                // through the measuring. This is the measured replacement for it.
+                //
+                // Restricted to a tunnel this run brought up. The same run can be refreshing
+                // the reserve underneath a connection the user made themselves, and tearing
+                // that down to install a better server is not a trade anybody asked for.
+                if (connectedByThisRun && uiState.value.isRunning) {
+                    connectedByThisRun = false
                     dataSource.startTunnel(event.guid)
                 }
                 refreshSelectedGuid()
@@ -234,6 +262,9 @@ class MainViewModel(
 
             is MainServiceEvent.AutoModeFinish -> {
                 pendingAutoConnect = false
+                // Scoped to the run that made the provisional connection. Left set, it would
+                // let some later refresh restart a tunnel it had nothing to do with.
+                connectedByThisRun = false
                 _uiState.update {
                     it.copy(
                         autoMode = AutoModeProgress(),

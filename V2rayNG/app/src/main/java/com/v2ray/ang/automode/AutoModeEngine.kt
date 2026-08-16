@@ -65,6 +65,28 @@ class AutoModeEngine(
      */
     private val onFirstAcceptable: (String) -> Unit = {},
     /**
+     * Fired the moment *any* server is proved to carry a real request through its tunnel,
+     * long before anything has been measured.
+     *
+     * This exists because of what the first run costs. Everything else here is built to
+     * connect the user to a server worth having, and doing that honestly means measuring
+     * their line, fetching lists, importing, probing and then timing real downloads one at a
+     * time — about eighty seconds on a cold install. That is the right amount of work and it
+     * produces the right answer. It is also most of a minute during which somebody who just
+     * pressed a button has no internet, on the exact networks where they most need some, and
+     * a minute of nothing is how an install becomes an uninstall.
+     *
+     * So the order is inverted: connect on the first thing that demonstrably works, then keep
+     * running and upgrade silently when a measured server clears the bar. Seconds to *an*
+     * internet, the full eighty to a good one, and the user waits for neither.
+     *
+     * The provisional server is itself in the speed test, so the common case where it turns
+     * out to be fine re-selects the same guid and nothing moves at all. A switch only happens
+     * when the first thing that worked was genuinely not good enough — which is precisely
+     * when a switch is worth its cost.
+     */
+    private val onFirstUsable: (String) -> Unit = {},
+    /**
      * Live throughput while a measurement is in flight, in MB/s, with a flag saying whether
      * it is the user's own line or a server being tested. The dashboard shows the needle
      * moving instead of a card that sits at zero for the length of the run.
@@ -162,6 +184,13 @@ class AutoModeEngine(
      * out from under a live tunnel.
      */
     private val publishedGuids = mutableMapOf<String, String>()
+
+    /**
+     * Whether this run has already handed out an unmeasured server to connect on. Once per
+     * run: the point is to end the wait, and after that every further change of server should
+     * have a measurement behind it.
+     */
+    private var provisionalPublished = false
 
     fun stop() {
         stopped.set(true)
@@ -690,6 +719,10 @@ class AutoModeEngine(
 
             report("  tunnel test $tested/${min(live.size, MAX_REAL_PING)} — ${working.size} working so far.")
 
+            // The first thing that works goes live now rather than in a minute's time. See
+            // [onFirstUsable]; the rest of the run carries on and upgrades it if it has to.
+            publishProvisional(working, delays)
+
             // Now that a batch has been timed, project from that instead of the prior:
             // how many rounds are still likely, plus the speed test that follows them.
             val roundsLeft = if (working.size >= target) 0 else max(0, MAX_REAL_PING_ROUNDS - round)
@@ -843,6 +876,34 @@ class AutoModeEngine(
     private fun publishEarlyWinner(winner: AutoModeMeasurement) {
         val guids = publishWinners(listOf(winner), replaceGroup = false)
         guids.firstOrNull()?.let(onFirstAcceptable)
+    }
+
+    /**
+     * Puts the first server that tunnelled into the group and hands it to the caller, once
+     * per run. See [onFirstUsable] for why a run connects to something unmeasured at all.
+     *
+     * Published through the same path as every other winner, so the guid it lands on is the
+     * guid it keeps when the run finishes and rewrites the group — otherwise the end of the
+     * run would delete the profile the tunnel is currently sitting on.
+     *
+     * Its throughput is recorded as zero rather than guessed. Zero is what is actually known
+     * here, it reads as "not measured" everywhere it is displayed, and the speed test that
+     * follows overwrites it with a real figure a moment later.
+     */
+    private fun publishProvisional(working: List<ServerRef>, delays: Map<String, Long>) {
+        if (provisionalPublished) return
+        val first = working.firstOrNull() ?: return
+        val delay = delays[first.guid] ?: MmkvManager.decodeServerAffiliationInfo(first.guid)?.testDelayMillis ?: -1
+        provisionalPublished = true
+
+        val guid = publishWinners(
+            listOf(AutoModeMeasurement(guid = first.guid, profile = first.profile, delayMillis = delay)),
+            replaceGroup = false,
+        ).firstOrNull() ?: return
+
+        LogUtil.i(AppConfig.TAG, "AutoMode: provisional connect on ${first.profile.remarks.take(40)}")
+        report("Connected on the first server that works — still looking for a faster one.")
+        onFirstUsable(guid)
     }
 
     fun selectWinners(measured: List<AutoModeMeasurement>, store: AutoModeStore): List<AutoModeMeasurement> {
