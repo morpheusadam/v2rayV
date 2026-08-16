@@ -41,11 +41,38 @@ object LogUtil {
             if (current != CACHE_UNSET) {
                 current
             } else {
-                parsePriority(MmkvManager.decodeSettingsString(AppConfig.PREF_LOGLEVEL, DEFAULT_LEVEL)).also {
-                    cachedMinPriority = it
+                val stored = storedLevel()
+                val priority = parsePriority(stored ?: DEFAULT_LEVEL)
+                // Only a real reading is worth remembering. Caching the fallback would pin the
+                // default for the life of the process because MMKV happened not to be ready the
+                // first time anything logged.
+                if (stored != null) {
+                    cachedMinPriority = priority
                 }
+                priority
             }
         }
+    }
+
+    /**
+     * The configured level, or null when the setting cannot be read at all.
+     *
+     * The read goes through MMKV, which is a native library: before it is initialised, or in a
+     * JVM unit test where it is never loaded, this throws — and it throws UnsatisfiedLinkError,
+     * an Error rather than an Exception, so a `catch (e: Exception)` around the call site does
+     * not stop it.
+     *
+     * That matters because of where logging is called from. LogUtil is used from inside catch
+     * blocks throughout this codebase, which is precisely the position in which a logger must
+     * not fail: an error that was being handled becomes a crash, and the crash is attributed to
+     * the logging rather than to whatever was actually wrong. Never propagating is worth more
+     * here than honouring a setting, so an unreadable setting falls back to the default level
+     * and is not cached — the real value is picked up once MMKV is available.
+     */
+    private fun storedLevel(): String? = try {
+        MmkvManager.decodeSettingsString(AppConfig.PREF_LOGLEVEL, DEFAULT_LEVEL)
+    } catch (t: Throwable) {
+        null
     }
 
     private fun isEnabled(priority: Int): Boolean {
