@@ -6,6 +6,11 @@ on:
       release_tag:
         required: false
         type: string
+      prerelease:
+        description: Mark as a pre-release, so the channel is not notified
+        required: false
+        default: false
+        type: boolean
   # automode is this repo's default branch; the inherited "master" never fires here, which is
   # why nothing has ever been built on a push.
   push:
@@ -164,4 +169,8 @@ jobs:
           file: release-files/*
           tag: ${{ inputs.release_tag }}
           file_glob: true
-          prerelease: true
+          # Hardcoding this to true meant no build could ever produce a real release, and the
+          # announcement workflow fires on `released` rather than `published` precisely so a
+          # pre-release does not wake the channel. The two together silently guaranteed the
+          # channel would never hear about anything.
+          prerelease: ${{ inputs.prerelease }}
