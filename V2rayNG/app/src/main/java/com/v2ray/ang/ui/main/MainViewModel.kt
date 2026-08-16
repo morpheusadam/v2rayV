@@ -103,12 +103,17 @@ class MainViewModel(
     private var pendingAutoConnect: Boolean = false
 
     /**
-     * Whether the tunnel currently up was brought up by this run's provisional connect, and
-     * may therefore be replaced when a measured server arrives. False for a connection the
-     * user made themselves, which a background refresh must never tear down.
+     * The unmeasured server this run connected on to end the wait, while the tunnel is still
+     * running it. Null for a connection the user made themselves, which a background refresh
+     * must never tear down.
+     *
+     * The guid is held rather than a flag so the later measured winner can be compared
+     * against it directly. Comparing against the selected guid instead would race: the run
+     * writes its choice to the shared store before announcing it, so by the time the message
+     * arrives the selection can already be the new one.
      */
     @Volatile
-    private var connectedByThisRun: Boolean = false
+    private var provisionalGuid: String? = null
 
     private val initialPageReady = CompletableDeferred<Unit>()
 
@@ -148,7 +153,7 @@ class MainViewModel(
             MainServiceEvent.StateStopSuccess -> {
                 // The tunnel this run put up is gone, so there is nothing left for a
                 // measured server to replace.
-                connectedByThisRun = false
+                provisionalGuid = null
                 updateRunningState(false)
             }
             is MainServiceEvent.MeasureDelaySuccess -> {
@@ -240,7 +245,7 @@ class MainViewModel(
                 // started deliberately must not connect the tunnel behind their back.
                 if (pendingAutoConnect && !uiState.value.isRunning) {
                     pendingAutoConnect = false
-                    connectedByThisRun = true
+                    provisionalGuid = event.guid
                     dataSource.startTunnel(event.guid)
                 }
                 refreshSelectedGuid()
@@ -250,11 +255,17 @@ class MainViewModel(
                 // The run connected on the first server that worked so the user did not sit
                 // through the measuring. This is the measured replacement for it.
                 //
-                // Restricted to a tunnel this run brought up. The same run can be refreshing
-                // the reserve underneath a connection the user made themselves, and tearing
-                // that down to install a better server is not a trade anybody asked for.
-                if (connectedByThisRun && uiState.value.isRunning) {
-                    connectedByThisRun = false
+                // Two conditions, both load-bearing. The tunnel has to be one this run put
+                // up, because the same run refreshes the reserve underneath connections the
+                // user made themselves and those must not be torn down. And it has to be a
+                // different server: the provisional pick goes into the speed test like any
+                // other, so the ordinary outcome is that it turns out fine and wins its own
+                // slot, and restarting then would drop every open connection to install the
+                // server already running.
+                val running = provisionalGuid
+                provisionalGuid = null
+
+                if (running != null && running != event.guid && uiState.value.isRunning) {
                     dataSource.restartTunnel(event.guid)
                 }
                 refreshSelectedGuid()
@@ -264,7 +275,7 @@ class MainViewModel(
                 pendingAutoConnect = false
                 // Scoped to the run that made the provisional connection. Left set, it would
                 // let some later refresh restart a tunnel it had nothing to do with.
-                connectedByThisRun = false
+                provisionalGuid = null
                 _uiState.update {
                     it.copy(
                         autoMode = AutoModeProgress(),
