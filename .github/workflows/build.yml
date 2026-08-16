@@ -6,8 +6,11 @@ on:
       release_tag:
         required: false
         type: string
+  # automode is this repo's default branch; the inherited "master" never fires here, which is
+  # why nothing has ever been built on a push.
   push:
     branches:
+      - automode
       - master
 
 permissions:
