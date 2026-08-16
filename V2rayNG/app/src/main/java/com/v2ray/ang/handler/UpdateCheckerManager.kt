@@ -75,17 +75,38 @@ object UpdateCheckerManager {
         }
     }
 
-    private fun compareVersions(version1: String, version2: String): Int {
-        val v1 = version1.split(".")
-        val v2 = version2.split(".")
+    /**
+     * Orders two version strings, treating any run of digits as a component.
+     *
+     * The previous version split on "." and called toInt() on each piece, which threw on any
+     * tag that was not purely numeric. That is most release conventions: "2.3.4-1", "1.0-rc2",
+     * "3.0.0-beta". A throw here does not merely skip the comparison, it fails the whole
+     * update check, so every user of a release before such a tag silently stops being told
+     * that updates exist. The bug is invisible until the first tag that trips it, and by then
+     * it affects the people who cannot be reached to fix it.
+     *
+     * Digit runs rather than dot-separated fields, so "2.3.4-1" reads as 2, 3, 4, 1 and sorts
+     * after "2.3.4" — a rebuild of a version is newer than the version. Non-numeric text is
+     * skipped rather than guessed at: this orders releases, it is not a semver implementation,
+     * and pretending otherwise would be a different bug.
+     */
+    internal fun compareVersions(version1: String, version2: String): Int {
+        val v1 = numericParts(version1)
+        val v2 = numericParts(version2)
 
         for (i in 0 until maxOf(v1.size, v2.size)) {
-            val num1 = if (i < v1.size) v1[i].toInt() else 0
-            val num2 = if (i < v2.size) v2[i].toInt() else 0
-            if (num1 != num2) return num1 - num2
+            val num1 = v1.getOrElse(i) { 0L }
+            val num2 = v2.getOrElse(i) { 0L }
+            if (num1 != num2) return if (num1 > num2) 1 else -1
         }
         return 0
     }
+
+    /** Every run of digits, in order. Long because a date-based tag overflows an Int. */
+    private fun numericParts(version: String): List<Long> =
+        Regex("""\d+""").findAll(version)
+            .mapNotNull { it.value.toLongOrNull() }
+            .toList()
 
     private fun getDownloadUrl(release: GitHubRelease, abi: String): String {
         val fDroid = "fdroid"
