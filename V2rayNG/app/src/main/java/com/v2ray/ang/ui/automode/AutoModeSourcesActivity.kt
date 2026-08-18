@@ -107,6 +107,38 @@ private fun AutoModeSourcesScreen(
                 .padding(horizontal = 16.dp),
         ) {
             item {
+                SectionHeader(stringResource(R.string.automode_section_iran))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.automode_iran_label),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Switch(
+                        checked = state.iranMode,
+                        onCheckedChange = { viewModel.setIranMode(it) },
+                    )
+                }
+                Text(
+                    text = stringResource(R.string.automode_iran_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                if (state.iranMode) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(R.string.automode_iran_active),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                HorizontalDivider()
+            }
+
+            item {
                 SectionHeader(stringResource(R.string.automode_section_sources))
                 Text(
                     text = stringResource(
@@ -235,14 +267,17 @@ private fun AutoModeSourcesScreen(
             item {
                 SectionHeader(stringResource(R.string.automode_section_country))
                 Text(
-                    text = stringResource(R.string.automode_country_hint),
+                    text =
+                        if (state.iranMode) stringResource(R.string.automode_country_overridden)
+                        else stringResource(R.string.automode_country_hint),
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Spacer(Modifier.height(8.dp))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     CountryHint.pickerOptions.forEach { (code, name) ->
                         FilterChip(
-                            selected = state.countryFilter.contains(code),
+                            selected = !state.iranMode && state.countryFilter.contains(code),
+                            enabled = !state.iranMode,
                             onClick = { viewModel.toggleCountry(code) },
                             label = { Text("$code — $name") },
                         )

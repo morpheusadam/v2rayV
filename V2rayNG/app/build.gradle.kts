@@ -51,11 +51,10 @@ android {
         applicationId = "com.v2rayv.app"
         minSdk = 24
         targetSdk = 37
-        // The name stays at 2.3.4 because this is that release corrected, not a successor.
-        // The code still has to move: Android compares codes, not names, and an install of
-        // the earlier 744 will not accept a replacement that claims to be the same build.
-        versionCode = 745
-        versionName = "2.3.4"
+        // 2.4.0 adds Iran mode — connecting *into* Iran so an Iranian bank sees an Iranian
+        // address — which is a feature rather than a fix, so the minor number moves.
+        versionCode = 746
+        versionName = "2.4.0"
 
         val abiFilterList = (properties["ABI_FILTERS"] as? String)?.split(';')
         splits {

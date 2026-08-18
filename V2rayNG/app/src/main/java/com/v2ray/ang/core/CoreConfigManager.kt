@@ -9,6 +9,7 @@ import com.v2ray.ang.dto.ConfigResult
 import com.v2ray.ang.dto.CoreConfigContext
 import com.v2ray.ang.dto.V2rayConfig
 import com.v2ray.ang.dto.entities.ProfileItem
+import com.v2ray.ang.automode.IranMode
 import com.v2ray.ang.dto.entities.RulesetItem
 import com.v2ray.ang.enums.BalancerStrategyType
 import com.v2ray.ang.enums.CoreResolvedType
@@ -1193,6 +1194,19 @@ object CoreConfigManager {
         }
 
         val rule = JsonUtil.fromJson(JsonUtil.toJson(item), V2rayConfig.RoutingBean.RulesBean::class.java) ?: return
+
+        // Iran mode inverts what a "bypass Iran" rule is for. The Iran routing preset sends
+        // geoip:ir and geosite:category-ir straight out of the phone, which is right for
+        // someone inside Iran and is exactly wrong for someone abroad connecting through an
+        // Iranian server to reach their bank: the bank would still see the foreign address,
+        // and nothing about the connection would look broken. The entries are dropped from
+        // the copy handed to the core, so the user's saved ruleset is untouched and turning
+        // the mode off restores it with nothing to undo.
+        if (rule.outboundTag == AppConfig.TAG_DIRECT && IranMode.tunnelsIranianTraffic(configContext.guid)) {
+            val trimmed = IranMode.trimIranBypass(rule.domain, rule.ip) ?: return
+            rule.domain = trimmed.first
+            rule.ip = trimmed.second
+        }
 
         // Replace specific geoip rules with ext versions
         rule.ip?.let { ipList ->

@@ -17,6 +17,7 @@ data class AutoModeSettingsState(
     val topCount: Int = 10,
     val protocolFilter: List<String> = emptyList(),
     val countryFilter: List<String> = emptyList(),
+    val iranMode: Boolean = false,
     val runCount: Int = 0,
     val sourcesPerRun: Int = 8,
     val smartSwitch: Boolean = false,
@@ -58,6 +59,7 @@ class AutoModeSourcesViewModel : ViewModel() {
                 topCount = store.topCount,
                 protocolFilter = store.protocolFilter.toList(),
                 countryFilter = store.countryFilter.toList(),
+                iranMode = store.iranMode,
                 runCount = store.runCount,
                 sourcesPerRun = store.sourcesPerRun,
                 smartSwitch = store.smartSwitch,
@@ -120,6 +122,13 @@ class AutoModeSourcesViewModel : ViewModel() {
             val current = _state.value.protocolFilter.toMutableList()
             if (!current.remove(name)) current.add(name)
             withContext(Dispatchers.IO) { AutoModeSourceManager.setProtocolFilter(current) }
+            refresh()
+        }
+    }
+
+    fun setIranMode(enabled: Boolean) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { AutoModeSourceManager.setIranMode(enabled) }
             refresh()
         }
     }

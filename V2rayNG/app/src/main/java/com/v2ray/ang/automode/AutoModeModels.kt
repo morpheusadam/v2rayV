@@ -80,6 +80,15 @@ data class AutoModeStore(
      */
     var countryFilter: MutableList<String> = mutableListOf(),
 
+    /**
+     * Keep only servers that come out inside Iran, for reaching Iranian banks and domestic
+     * apps from abroad. Overrides [countryFilter] entirely while it is on, and it is not
+     * the same thing as putting "IR" in that list: a filter falls back to the fastest
+     * server found anywhere when too few match, which for this purpose is a silent
+     * failure. See [IranMode].
+     */
+    var iranMode: Boolean = false,
+
     var sources: MutableList<AutoModeSource> = mutableListOf(),
 
     /**

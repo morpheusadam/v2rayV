@@ -128,4 +128,41 @@ class AutoModeRankerTest {
         assertEquals(AutoModeRanker.speedBucket(5.0), AutoModeRanker.speedBucket(5.4))
         assertTrue(AutoModeRanker.speedBucket(5.0) < AutoModeRanker.speedBucket(5.6))
     }
+
+    /**
+     * Iran mode flattens the country table: every country but one is equally useless, and
+     * an unlabelled server sorts ahead of a known-foreign one because it might yet be
+     * Iranian.
+     */
+    @Test
+    fun `iran mode ranks iran first and everywhere else alike`() {
+        assertTrue(AutoModeRanker.countryTier("IR", true) < AutoModeRanker.countryTier(null, true))
+        assertTrue(AutoModeRanker.countryTier(null, true) < AutoModeRanker.countryTier("DE", true))
+        assertEquals(AutoModeRanker.countryTier("DE", true), AutoModeRanker.countryTier("NL", true))
+    }
+
+    /**
+     * And it swaps the two priorities around. Normally protocol dominates, because a
+     * REALITY server that might work beats a plain VMess one that probably will not. Here
+     * a REALITY server in Germany cannot do the job at all, so country goes first.
+     */
+    @Test
+    fun `iran mode scores country above protocol`() {
+        val iranianVmess = AutoModeRanker.score(
+            profile(type = EConfigType.VMESS, remarks = "🇮🇷 Tehran"), iranMode = true
+        )
+        val germanReality = AutoModeRanker.score(
+            profile(security = "reality", remarks = "🇩🇪 Frankfurt"), iranMode = true
+        )
+        assertTrue(iranianVmess < germanReality)
+    }
+
+    /** A foreign server never sorts ahead of an Iranian one, however much faster it is. */
+    @Test
+    fun `iran mode puts an iranian server ahead of a faster foreign one`() {
+        val fastGermany = measured(9.0, "DE")
+        val slowIran = measured(0.4, "IR")
+        assertTrue(AutoModeRanker.compareWinners(slowIran, fastGermany, iranMode = true) < 0)
+        assertTrue(AutoModeRanker.compareWinners(fastGermany, slowIran) < 0)
+    }
 }

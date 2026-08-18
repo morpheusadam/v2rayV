@@ -114,8 +114,23 @@ object AutoModeBaseline {
             && System.currentTimeMillis() - store.baselineMillis < TTL_MILLIS
 
     /** The throughput a server must reach to be good enough to stop looking and connect. */
-    fun acceptThreshold(baselineMbps: Double, store: AutoModeStore): Double =
-        if (baselineMbps <= UNKNOWN) 0.0 else baselineMbps * store.acceptFraction
+    /**
+     * The throughput a server has to reach to be worth connecting to, as a fraction of the
+     * line it was measured against.
+     *
+     * Iran mode uses a much lower fraction — see [IranMode.ACCEPT_FRACTION]. Not a
+     * concession: an Iranian server reached from abroad is bounded by Iran's international
+     * link rather than by itself, so the usual bar would reject every server the mode
+     * exists to find, and rejecting all of them is not a truer answer than judging them
+     * against what they can actually be.
+     */
+    fun acceptThreshold(baselineMbps: Double, store: AutoModeStore): Double {
+        if (baselineMbps <= UNKNOWN) {
+            return 0.0
+        }
+        val fraction = if (store.iranMode) IranMode.ACCEPT_FRACTION else store.acceptFraction
+        return baselineMbps * fraction
+    }
 
     fun format(mbPerSecond: Double): String =
         if (mbPerSecond <= 0) "?" else String.format(java.util.Locale.US, "%.1f MB/s", mbPerSecond)

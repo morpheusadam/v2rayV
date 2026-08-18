@@ -60,7 +60,7 @@ actually fast enough for you.</b></p>
 
 ## Contents
 
-[Why](#why-this-exists) · [Auto Mode](#auto-mode) · [What makes it work](#the-decisions-that-carry-the-whole-thing) ·
+[Why](#why-this-exists) · [Auto Mode](#auto-mode) · [Iran mode](#iran-mode) · [What makes it work](#the-decisions-that-carry-the-whole-thing) ·
 [When the internet is blocked](#reaching-the-internet-when-the-internet-is-blocked) ·
 [A run, end to end](#a-run-end-to-end) · [Dashboard](#the-dashboard) ·
 [In the background](#what-it-does-while-you-are-not-looking) ·
@@ -93,6 +93,29 @@ and keeps the winners as ready-to-use servers.
 
 You do not pick a server. You do not run a ping test and guess what the numbers mean. You
 press power.
+
+---
+
+## Iran mode
+
+**Auto Mode → Iran (IR)** turns the whole thing around: instead of getting you out of Iran,
+it connects you *into* it. For Iranians living abroad, whose bank, insurer, tax office and
+domestic app store all look at where the request came from and refuse a foreign address.
+
+Same pipeline, same measurements, three deliberate differences:
+
+| In Iran mode | Why |
+|---|---|
+| **Only servers measured coming out inside Iran are kept.** No topping up the list with the fastest found anywhere. | That fallback is what a country filter does, and here it produces a connection that looks like it worked and still cannot reach the bank. If nothing Iranian is found, the run says so. |
+| **Country is ranked above protocol**, the reverse of the usual order. | A REALITY server in Frankfurt cannot do the job at any speed. A slow Iranian one can. |
+| **Unsafe configs are refused outright**, not ranked low: no SOCKS or HTTP, nothing carrying traffic unencrypted, nothing with certificate checking switched off. | This traffic is somebody's bank, and it is being carried by a machine inside the network they are reaching through. |
+| **Iranian sites stop bypassing the tunnel.** The Iran routing preset sends `geoip:ir` and `geosite:category-ir` straight out of the phone; those entries are dropped while an Iranian server is carrying the connection. | Without this the bank would still see the foreign address and nothing would look broken. Your saved ruleset is not touched — switching the mode off restores it. |
+
+Expect it to be slower than a normal connection: Iran's link to the outside world is the
+limit, not the server. The acceptance bar drops accordingly, from 70% of your line to 10%.
+
+Public subscription lists rarely carry Iranian exits. The mode works best pointed at a
+server of your own — add it under **Auto Mode → Edit links**, or as an ordinary profile.
 
 ---
 

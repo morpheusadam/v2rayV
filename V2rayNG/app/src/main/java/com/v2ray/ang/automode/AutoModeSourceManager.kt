@@ -229,6 +229,11 @@ object AutoModeSourceManager {
         save()
     }
 
+    fun setIranMode(enabled: Boolean) {
+        getStore().iranMode = enabled
+        save()
+    }
+
     private val urlRegex = Regex("https?://[^\\s,;'\"]+")
 
     /**

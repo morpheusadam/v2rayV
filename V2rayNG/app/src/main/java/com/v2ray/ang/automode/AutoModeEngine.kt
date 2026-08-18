@@ -293,7 +293,9 @@ class AutoModeEngine(
                 else "Imported $beforeFilter candidates, ${candidates.size} match the filter."
             )
             if (candidates.isEmpty()) {
-                result.message = "Sources downloaded but contained no usable server."
+                result.message =
+                    if (store.iranMode) "No server in these sources is both Iranian and safe enough to use."
+                    else "Sources downloaded but contained no usable server."
                 report(result.message)
                 return@withContext result
             }
@@ -322,7 +324,7 @@ class AutoModeEngine(
                 }
             }
 
-            val live = tcpingStage(candidates)
+            val live = tcpingStage(candidates, store.iranMode)
             result.tcpAlive = live.size
             report("${live.size} of ${min(candidates.size, MAX_TCPING)} endpoints answered.")
             if (live.isEmpty()) {
@@ -336,7 +338,7 @@ class AutoModeEngine(
             // ---- real ping: the stage that actually proves a proxy works ------------
             beginStage(AutoModeStage.TUNNELING)
             val target = max(store.topCount * 2, 12)
-            val working = realPingStage(live, target, realPingTested)
+            val working = realPingStage(live, target, realPingTested, store.iranMode)
             workingIds = working.map { it.guid }.toSet()
             result.realPingOk = working.size
             report("${working.size} servers completed a real request through the tunnel.")
@@ -344,7 +346,7 @@ class AutoModeEngine(
             // Champions from the previous run are re-tested rather than grandfathered,
             // so a server that has since died loses its slot on its own.
             val champions = loadGroup(TOP_GROUP_ID)
-            val speedInput = mergeForSpeedTest(working, champions)
+            val speedInput = mergeForSpeedTest(working, champions, store.iranMode)
 
             if (speedInput.isEmpty()) {
                 result.message =
@@ -363,9 +365,10 @@ class AutoModeEngine(
             result.baselineMbps = baselineMbps
             acceptThreshold = AutoModeBaseline.acceptThreshold(baselineMbps, store)
 
-            val measurements = speedTestStage(speedInput, acceptThreshold)
+            val measurements = speedTestStage(speedInput, acceptThreshold, store.iranMode)
             result.speedTested = measurements.size
-            result.acceptedMbps = measurements.firstOrNull { isAcceptable(it, acceptThreshold) }?.speedMbps ?: 0.0
+            result.acceptedMbps =
+                measurements.firstOrNull { isAcceptable(it, acceptThreshold, store.iranMode) }?.speedMbps ?: 0.0
 
             // ---- keep the best -----------------------------------------------------
             val winners = selectWinners(measurements, store)
@@ -389,7 +392,20 @@ class AutoModeEngine(
                         "${skewDescription()}. Servers refuse connections when the time is " +
                         "wrong. Turn on automatic date and time, then run this again."
 
+                // Says which of the two things went wrong, because they need opposite
+                // fixes: nothing Iranian in the lists means adding a source that carries
+                // Iranian servers, and no working Iranian server means trying again later.
+                winners.isEmpty() && store.iranMode ->
+                    "Iran mode kept nothing: none of the servers tested came out inside Iran. " +
+                        "Public lists rarely carry Iranian exits — add a subscription that does, " +
+                        "or an Iranian server of your own, under Edit links."
+
                 winners.isEmpty() -> "Auto Mode found no server fast enough to keep."
+
+                store.iranMode ->
+                    "${winners.size} Iranian ${if (winners.size == 1) "server" else "servers"} ready — " +
+                        "best ${formatSpeed(winners.first().speedMbps)}. Iranian sites now go through the tunnel."
+
                 // Naming the line speed the servers were measured against is the
                 // difference between "5.7 MB/s, is that good?" and an answer.
                 baselineMbps > AutoModeBaseline.UNKNOWN ->
@@ -612,6 +628,12 @@ class AutoModeEngine(
      * winners are chosen. Candidates whose remark says nothing about a country are kept
      * rather than dropped — an unlabelled server in the right country is still a good
      * server, and the measurement will settle it.
+     *
+     * Iran mode is stricter in both directions, for reasons set out in [IranMode]: an
+     * unsafe config is refused outright rather than ranked low, and a server whose remark
+     * names some other country is dropped instead of kept as filler, because no amount of
+     * throughput makes a German address answer an Iranian bank. Unlabelled candidates
+     * still go through — most Iranian entries in a public list carry no flag at all.
      */
     private fun applyFilters(candidates: List<ServerRef>, store: AutoModeStore): List<ServerRef> {
         var filtered = candidates
@@ -619,6 +641,10 @@ class AutoModeEngine(
         if (store.protocolFilter.isNotEmpty()) {
             val wanted = store.protocolFilter.map { it.uppercase() }.toSet()
             filtered = filtered.filter { wanted.contains(it.profile.configType.name.uppercase()) }
+        }
+
+        if (store.iranMode) {
+            return filtered.filter { IranMode.isSecure(it.profile) && !IranMode.labelledElsewhere(it.profile) }
         }
 
         if (store.countryFilter.isNotEmpty()) {
@@ -668,12 +694,12 @@ class AutoModeEngine(
      * used to order the next stage: measured pass rate for the lowest-tcping candidates
      * was 2.1% against 7.5% for a random draw from the same pool.
      */
-    private suspend fun tcpingStage(candidates: List<ServerRef>): List<ServerRef> {
+    private suspend fun tcpingStage(candidates: List<ServerRef>, iranMode: Boolean): List<ServerRef> {
         // Which candidates get a slot is decided by protocol and country — prior evidence
         // read off the config, not a measurement — and randomised within each tier. The
         // *results* are still used only to drop the dead, never to order what follows.
         val subset = if (candidates.size > MAX_TCPING) {
-            AutoModeRanker.prioritise(candidates) { it.profile }.take(MAX_TCPING)
+            AutoModeRanker.prioritise(candidates, iranMode) { it.profile }.take(MAX_TCPING)
         } else {
             candidates
         }
@@ -694,10 +720,11 @@ class AutoModeEngine(
         live: List<ServerRef>,
         target: Int,
         testedIds: MutableSet<String>,
+        iranMode: Boolean,
     ): List<ServerRef> {
         // Same prior, applied again: the batches that go first are the ones most likely to
         // contain something that tunnels, so the stage reaches its target in fewer rounds.
-        var queue = AutoModeRanker.prioritise(live) { it.profile }
+        var queue = AutoModeRanker.prioritise(live, iranMode) { it.profile }
         val working = mutableListOf<ServerRef>()
         var tested = 0
         var round = 0
@@ -731,7 +758,7 @@ class AutoModeEngine(
 
             // The first thing that works goes live now rather than in a minute's time. See
             // [onFirstUsable]; the rest of the run carries on and upgrades it if it has to.
-            publishProvisional(working, delays)
+            publishProvisional(working, delays, iranMode)
 
             // Now that a batch has been timed, project from that instead of the prior:
             // how many rounds are still likely, plus the speed test that follows them.
@@ -753,7 +780,11 @@ class AutoModeEngine(
      * that, a run turning up plenty of mediocre servers would silently evict a fast one
      * that was still working.
      */
-    fun mergeForSpeedTest(working: List<ServerRef>, champions: List<ServerRef>): List<ServerRef> {
+    fun mergeForSpeedTest(
+        working: List<ServerRef>,
+        champions: List<ServerRef>,
+        iranMode: Boolean = false,
+    ): List<ServerRef> {
         val merged = mutableListOf<ServerRef>()
         val seen = mutableSetOf<String>()
 
@@ -770,11 +801,17 @@ class AutoModeEngine(
             }
         }
 
-        add(champions, MAX_CHAMPIONS_RETESTED)
+        // Champions carried over from a run made in the other mode cannot win this one, so
+        // they are dropped here rather than after paying for a speed test each.
+        val eligibleChampions =
+            if (iranMode) champions.filter { IranMode.isSecure(it.profile) && !IranMode.labelledElsewhere(it.profile) }
+            else champions
+
+        add(eligibleChampions, MAX_CHAMPIONS_RETESTED)
         // The speed test is the most expensive stage by a wide margin — a core start plus
         // a real download each — so the newcomers that get a slot are the best-scoring
         // ones rather than whichever happened to survive first.
-        add(AutoModeRanker.prioritise(working) { it.profile }, MAX_SPEED_TEST)
+        add(AutoModeRanker.prioritise(working, iranMode) { it.profile }, MAX_SPEED_TEST)
         return merged
     }
 
@@ -798,6 +835,7 @@ class AutoModeEngine(
     private suspend fun speedTestStage(
         input: List<ServerRef>,
         acceptThreshold: Double,
+        iranMode: Boolean,
     ): List<AutoModeMeasurement> = coroutineScope {
         val measurements = mutableListOf<AutoModeMeasurement>()
         var accepted = false
@@ -844,9 +882,12 @@ class AutoModeEngine(
                     onSample = { mbps -> onSpeedSample(mbps, false) },
                     onThroughput = { throughput ->
                         // Fired before the exit-country lookup, so the user is connected
-                        // while that round trip happens rather than after it.
+                        // while that round trip happens rather than after it. Iran mode
+                        // cannot use that shortcut: where the traffic came out is the whole
+                        // question there, and it is not known yet — so it waits the one
+                        // extra round trip and decides below.
                         throughput.delayMillis = knownDelay
-                        if (!accepted && isAcceptable(throughput, acceptThreshold)) {
+                        if (!iranMode && !accepted && isAcceptable(throughput, acceptThreshold, false)) {
                             accepted = true
                             publishEarlyWinner(throughput)
                             report(
@@ -859,6 +900,18 @@ class AutoModeEngine(
                 warmed.remove(warm)
                 measurement.delayMillis = knownDelay
                 measurements.add(measurement)
+
+                // Same early connect, one lookup later: by here the exit country is known,
+                // so an Iranian server can be handed over as soon as it proves itself
+                // rather than at the end of the run.
+                if (iranMode && !accepted && isAcceptable(measurement, acceptThreshold, true)) {
+                    accepted = true
+                    publishEarlyWinner(measurement)
+                    report(
+                        "Iranian exit found at ${formatSpeed(measurement.speedMbps)} — connecting now, "
+                            + "still filling the reserve."
+                    )
+                }
             }
         } finally {
             withContext(NonCancellable) {
@@ -871,10 +924,17 @@ class AutoModeEngine(
         measurements
     }
 
-    fun isAcceptable(measurement: AutoModeMeasurement, acceptThreshold: Double): Boolean =
+    fun isAcceptable(
+        measurement: AutoModeMeasurement,
+        acceptThreshold: Double,
+        iranMode: Boolean = false,
+    ): Boolean =
         measurement.speedMbps > 0
             && measurement.delayMillis in 1..MAX_ACCEPTABLE_DELAY
             && measurement.speedMbps >= acceptThreshold
+            // In Iran mode a fast server that comes out anywhere else is not a lesser
+            // result, it is the wrong one, and connecting to it would look like success.
+            && (!iranMode || IranMode.isIranianExit(measurement))
 
     /**
      * Puts one server into the top group so it can be connected to right away.
@@ -899,10 +959,16 @@ class AutoModeEngine(
      * Its throughput is recorded as zero rather than guessed. Zero is what is actually known
      * here, it reads as "not measured" everywhere it is displayed, and the speed test that
      * follows overwrites it with a real figure a moment later.
+     *
+     * Iran mode passes only servers whose address is already known to be Iranian. The whole
+     * trade here — connect to something unmeasured now, upgrade it later — depends on the
+     * unmeasured thing being usable, and in that mode a server that comes out in Germany is
+     * not a slow start, it is the failure the user would then have to notice for themselves.
      */
-    private fun publishProvisional(working: List<ServerRef>, delays: Map<String, Long>) {
+    private fun publishProvisional(working: List<ServerRef>, delays: Map<String, Long>, iranMode: Boolean) {
         if (provisionalPublished) return
-        val first = working.firstOrNull() ?: return
+        val eligible = if (iranMode) working.filter { IranMode.isIranianHost(it.profile.server) } else working
+        val first = eligible.firstOrNull() ?: return
         val delay = delays[first.guid] ?: MmkvManager.decodeServerAffiliationInfo(first.guid)?.testDelayMillis ?: -1
         provisionalPublished = true
 
@@ -922,7 +988,15 @@ class AutoModeEngine(
             // Throughput still decides, but in half-megabyte buckets, so that servers which
             // measured within noise of each other are separated by country and protocol
             // rather than by which one happened to catch a better second.
-            .sortedWith { a, b -> AutoModeRanker.compareWinners(a, b) }
+            .sortedWith { a, b -> AutoModeRanker.compareWinners(a, b, store.iranMode) }
+
+        // No topping up from elsewhere. Handing back a foreign server because too few
+        // Iranian ones were found would look like success and fail at the bank, which is
+        // the one outcome this mode exists to rule out — an empty list is the honest answer
+        // and the run reports it as one.
+        if (store.iranMode) {
+            return scored.filter { IranMode.isIranianExit(it) }.take(store.topCount)
+        }
 
         if (store.countryFilter.isEmpty()) {
             return scored.take(store.topCount)

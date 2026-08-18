@@ -4,6 +4,7 @@ import android.content.Context
 import com.v2ray.ang.dto.entities.ProfileItem
 import com.v2ray.ang.enums.EConfigType
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito.mock
@@ -187,5 +188,65 @@ class AutoModeEngineTest {
         val unknown = measured("x", 2.1, 180)
         assertEquals("#3 2.1MB/s · 180ms", engine.label(2, unknown, null))
         assertEquals("#3 2.1MB/s · 180ms", engine.label(2, unknown, ""))
+    }
+
+    /**
+     * The one behaviour Iran mode exists to remove. A country *filter* tops its list up
+     * with the fastest servers found anywhere, which for a user trying to reach an Iranian
+     * bank is a connection that looks like it worked and cannot do the job.
+     */
+    @Test
+    fun `iran mode leaves the slots empty rather than filling them from abroad`() {
+        val store = AutoModeStore(topCount = 3, iranMode = true)
+        val winners = engine.selectWinners(
+            listOf(
+                measured("ir", 0.6, 400, country = "IR"),
+                measured("de-fast", 9.0, 100, country = "DE"),
+                measured("us-fast", 8.0, 100, country = "US"),
+            ),
+            store
+        )
+        assertEquals(listOf("ir"), winners.map { it.guid })
+    }
+
+    /** And it can come back with nothing at all, which the run then reports as nothing. */
+    @Test
+    fun `iran mode keeps nothing when nothing came out of iran`() {
+        val store = AutoModeStore(topCount = 3, iranMode = true)
+        val winners = engine.selectWinners(
+            listOf(
+                measured("de", 9.0, 100, country = "DE"),
+                measured("nl", 8.0, 100, country = "NL"),
+            ),
+            store
+        )
+        assertTrue(winners.isEmpty())
+    }
+
+    /** Speed still orders the Iranian servers against each other. */
+    @Test
+    fun `the fastest iranian server is still the one ranked first`() {
+        val store = AutoModeStore(topCount = 2, iranMode = true)
+        val winners = engine.selectWinners(
+            listOf(
+                measured("slow", 0.3, 500, country = "IR"),
+                measured("fast", 2.0, 500, country = "IR"),
+            ),
+            store
+        )
+        assertEquals(listOf("fast", "slow"), winners.map { it.guid })
+    }
+
+    /**
+     * The mid-run connect is the same decision made earlier, so it needs the same guard:
+     * without it, a run would hand the user a German server seconds in and only correct
+     * itself at the end.
+     */
+    @Test
+    fun `iran mode does not accept a foreign server mid-run`() {
+        val german = measured("de", 9.0, 100, country = "DE")
+        assertTrue(engine.isAcceptable(german, 1.0, iranMode = false))
+        assertFalse(engine.isAcceptable(german, 1.0, iranMode = true))
+        assertTrue(engine.isAcceptable(measured("ir", 1.5, 400, country = "IR"), 1.0, iranMode = true))
     }
 }

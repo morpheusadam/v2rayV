@@ -67,8 +67,22 @@ object AutoModeRanker {
         return profile.flow?.contains("vision", ignoreCase = true) == true
     }
 
-    /** Country preference, lower is better. Null means the remark said nothing. */
-    fun countryTier(country: String?): Int {
+    /**
+     * Country preference, lower is better. Null means the remark said nothing.
+     *
+     * Iran mode inverts the table rather than reordering it. Every country but one is
+     * equally useless there — a bank refuses a German address and a Turkish one alike —
+     * so there is nothing to rank among them, and an unlabelled server sorts ahead of a
+     * server known to be foreign because it might still turn out to be Iranian.
+     */
+    fun countryTier(country: String?, iranMode: Boolean = false): Int {
+        if (iranMode) {
+            return when {
+                country == null -> 1
+                country.uppercase() == IranMode.COUNTRY -> 0
+                else -> 2
+            }
+        }
         if (country == null) {
             // Deliberately mid-table rather than last. Plenty of good servers carry a
             // remark that names no country, and burying them would throw away the pool
@@ -90,9 +104,20 @@ object AutoModeRanker {
      * The score a candidate is ordered by. Protocol dominates country: a REALITY server in
      * an unnamed country beats a plain VMess one that claims to be in Germany, because the
      * first might work and the second probably will not.
+     *
+     * Iran mode swaps the two around, and that swap is the whole point of the mode. There,
+     * a server that does not come out in Iran cannot do the job at any speed over any
+     * protocol, so country decides first and protocol only separates candidates that could
+     * both serve. The country evidence is also wider there — see [IranMode.looksIranian],
+     * which reads the address as well as the remark.
      */
-    fun score(profile: ProfileItem): Int =
-        protocolTier(profile) * 10 + countryTier(CountryHint.fromRemark(profile.remarks))
+    fun score(profile: ProfileItem, iranMode: Boolean = false): Int {
+        if (iranMode) {
+            val country = if (IranMode.looksIranian(profile)) IranMode.COUNTRY else CountryHint.fromRemark(profile.remarks)
+            return countryTier(country, true) * 10 + protocolTier(profile)
+        }
+        return protocolTier(profile) * 10 + countryTier(CountryHint.fromRemark(profile.remarks))
+    }
 
     /**
      * Orders candidates best-tier first, shuffled inside each tier.
@@ -101,8 +126,8 @@ object AutoModeRanker {
      * run": within a tier the choice is still random, so a run explores rather than
      * re-confirming.
      */
-    fun <T> prioritise(items: List<T>, profileOf: (T) -> ProfileItem): List<T> =
-        items.shuffled().sortedBy { score(profileOf(it)) }
+    fun <T> prioritise(items: List<T>, iranMode: Boolean = false, profileOf: (T) -> ProfileItem): List<T> =
+        items.shuffled().sortedBy { score(profileOf(it), iranMode) }
 
     /**
      * Final tiebreak among servers that all cleared the speed bar.
@@ -111,16 +136,24 @@ object AutoModeRanker {
      * in Germany, because the user asked for a working connection rather than a passport.
      * Country only separates servers that measured close to each other, which is why the
      * speed is bucketed before it is compared.
+     *
+     * Iran mode reverses that too: there the country is not a preference to be outweighed
+     * by throughput, it is the requirement, so it is compared before the speed and a
+     * foreign server can never sort ahead of an Iranian one.
      */
-    fun compareWinners(a: AutoModeMeasurement, b: AutoModeMeasurement): Int {
+    fun compareWinners(a: AutoModeMeasurement, b: AutoModeMeasurement, iranMode: Boolean = false): Int {
+        val countryA = countryTier(countryOf(a, iranMode), iranMode)
+        val countryB = countryTier(countryOf(b, iranMode), iranMode)
+        if (iranMode && countryA != countryB) {
+            return countryA - countryB
+        }
+
         val bucketA = speedBucket(a.speedMbps)
         val bucketB = speedBucket(b.speedMbps)
         if (bucketA != bucketB) {
             return bucketB - bucketA
         }
 
-        val countryA = countryTier(a.exitCountry ?: CountryHint.fromRemark(a.profile.remarks))
-        val countryB = countryTier(b.exitCountry ?: CountryHint.fromRemark(b.profile.remarks))
         if (countryA != countryB) {
             return countryA - countryB
         }
@@ -132,6 +165,22 @@ object AutoModeRanker {
         }
 
         return a.delayMillis.compareTo(b.delayMillis)
+    }
+
+    /**
+     * The country a measured server is judged by: what came out of the tunnel, falling
+     * back to the provider's claim. Iran mode also lets the address speak, since a server
+     * on an Iranian address block is an Iranian exit whatever its remark says.
+     */
+    private fun countryOf(measurement: AutoModeMeasurement, iranMode: Boolean): String? {
+        measurement.exitCountry?.let { return it }
+        // Ahead of the remark rather than after it: a server on an Iranian address block
+        // that a provider labelled "DE" is an Iranian exit with a careless label, and in
+        // this mode believing the label would throw away the only candidate there is.
+        if (iranMode && IranMode.isIranianHost(measurement.profile.server)) {
+            return IranMode.COUNTRY
+        }
+        return CountryHint.fromRemark(measurement.profile.remarks)
     }
 
     /**
