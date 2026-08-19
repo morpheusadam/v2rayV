@@ -967,7 +967,7 @@ class AutoModeEngine(
      */
     private fun publishProvisional(working: List<ServerRef>, delays: Map<String, Long>, iranMode: Boolean) {
         if (provisionalPublished) return
-        val eligible = if (iranMode) working.filter { IranMode.isIranianHost(it.profile.server) } else working
+        val eligible = if (iranMode) working.filter { IranMode.isIranianAddress(it.profile.server) } else working
         val first = eligible.firstOrNull() ?: return
         val delay = delays[first.guid] ?: MmkvManager.decodeServerAffiliationInfo(first.guid)?.testDelayMillis ?: -1
         provisionalPublished = true

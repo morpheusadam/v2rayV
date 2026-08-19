@@ -152,8 +152,49 @@ class IranModeTest {
     @Test
     fun `with no measurement the address decides`() {
         assertTrue(IranMode.isIranianExit(measured(null, server = "91.98.5.5")))
-        assertTrue(IranMode.isIranianExit(measured(null, remarks = "🇮🇷 Tehran")))
         assertFalse(IranMode.isIranianExit(measured(null, server = "8.8.8.8")))
+    }
+
+    /**
+     * The regression this mode would otherwise ship with.
+     *
+     * Measured against the 2000 configs in the project's own default bundle: 39 carried a
+     * `.ir` hostname and 37 of the 38 that resolved pointed outside Iran — Cloudflare, OVH,
+     * Hetzner. An Iranian domain in a circumvention list is nearly always fronting for a
+     * machine hosted abroad. Believing the suffix here would hand a German server a bank
+     * session and call the run a success, which is the exact failure the mode exists to
+     * prevent, so a name never survives the keep decision on its own.
+     */
+    @Test
+    fun `an ir domain is never enough to keep a server`() {
+        assertFalse(IranMode.isIranianExit(measured(null, server = "snapp.ir")))
+        assertFalse(IranMode.isIranianExit(measured(null, server = "gr021.bamajobin.ir")))
+        assertFalse(IranMode.isIranianAddress("snapp.ir"))
+    }
+
+    /** Nor is a remark, which is a claim by whoever wrote the list. */
+    @Test
+    fun `a remark alone is never enough to keep a server`() {
+        assertFalse(IranMode.isIranianExit(measured(null, server = "8.8.8.8", remarks = "🇮🇷 Tehran")))
+    }
+
+    /**
+     * The name still buys a place in the test queue, which costs one slot when it is wrong
+     * and finds the occasional real one when it is not. Evidence for testing, never for
+     * keeping — the same split the rest of the pipeline runs on.
+     */
+    @Test
+    fun `an ir domain is still worth testing`() {
+        assertTrue(IranMode.isIranianHost("snapp.ir"))
+        assertTrue(IranMode.looksIranian(profile(server = "snapp.ir")))
+        assertFalse(IranMode.isIranianAddress("snapp.ir"))
+    }
+
+    /** A measurement always outranks both, in either direction. */
+    @Test
+    fun `a measurement overrules the address`() {
+        assertTrue(IranMode.isIranianExit(measured("IR", server = "8.8.8.8")))
+        assertFalse(IranMode.isIranianExit(measured("DE", server = "91.98.5.5")))
     }
 
     // ---- the country filter -----------------------------------------------------

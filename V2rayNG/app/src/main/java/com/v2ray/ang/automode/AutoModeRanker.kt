@@ -177,7 +177,7 @@ object AutoModeRanker {
         // Ahead of the remark rather than after it: a server on an Iranian address block
         // that a provider labelled "DE" is an Iranian exit with a careless label, and in
         // this mode believing the label would throw away the only candidate there is.
-        if (iranMode && IranMode.isIranianHost(measurement.profile.server)) {
+        if (iranMode && IranMode.isIranianAddress(measurement.profile.server)) {
             return IranMode.COUNTRY
         }
         return CountryHint.fromRemark(measurement.profile.remarks)

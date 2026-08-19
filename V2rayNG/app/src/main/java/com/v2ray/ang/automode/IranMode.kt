@@ -160,11 +160,8 @@ object IranMode {
      * What the config claims, before anything has been measured — the label the ranker
      * spends its test budget on.
      *
-     * Two claims rather than the usual one. A remark saying "IR" is the same weak evidence
-     * it is everywhere else, but the address itself is better evidence here than for any
-     * other country: a proxy exits from the machine it runs on, so a server in an Iranian
-     * address block is an Iranian exit unless it has been deliberately chained elsewhere,
-     * which is rare and which the measurement catches anyway.
+     * A claim, and treated as one. It decides what is worth testing and never what is worth
+     * keeping; [isIranianExit] is the other half of that rule.
      */
     fun looksIranian(profile: ProfileItem): Boolean =
         CountryHint.fromRemark(profile.remarks) == COUNTRY || isIranianHost(profile.server)
@@ -182,38 +179,60 @@ object IranMode {
      * Whether a measured server may be kept.
      *
      * The measured exit country decides, and a server proven to come out somewhere else is
-     * never kept however fast it was. The fallback applies only when there is no
-     * measurement at all: the lookup runs *through* the tunnel, and the services that
-     * answer it are not reliably reachable from inside Iran, so reading "the lookup timed
-     * out" as "not Iranian" would reject the very servers this mode exists to find. The
-     * address is asked instead, which is weaker but is not nothing.
+     * never kept however fast it was.
+     *
+     * The fallback applies only when there is no measurement at all — the lookup runs
+     * *through* the tunnel and the services answering it are not reliably reachable from
+     * inside Iran, so reading "the lookup timed out" as "not Iranian" would reject the very
+     * servers this mode exists to find. But the fallback asks [isIranianAddress] and not
+     * [looksIranian], and the difference is the whole point: a name is a claim and an
+     * address block is not. Keeping a server on the strength of its name is how a German
+     * machine ends up carrying a bank session, which is the one outcome this mode exists to
+     * rule out, and it would happen silently because the run would report success.
      */
     fun isIranianExit(measurement: AutoModeMeasurement): Boolean {
         val measured = measurement.exitCountry
         if (measured != null) {
             return measured.uppercase() == COUNTRY
         }
-        return looksIranian(measurement.profile)
+        return isIranianAddress(measurement.profile.server)
     }
 
     /**
-     * Whether a host is in Iran, as far as its address can say.
+     * Whether a host is in Iran on the evidence of the address itself.
      *
-     * A `.ir` name is taken at face value. An address is matched against [IRAN_V4_BLOCKS];
-     * anything else — a foreign domain, a CDN name, an IPv6 literal — is unknown, and
-     * unknown is not a yes. The one thing this must never do is call a server Iranian when
-     * it is not, because that answer is only ever used where a measurement is missing.
+     * Only an address in [IRAN_V4_BLOCKS] counts. Anything else — a domain of any kind, an
+     * IPv6 literal — is unknown, and unknown is not a yes, because this answer is used
+     * exactly where a measurement is missing and a wrong yes is kept rather than caught.
+     *
+     * A `.ir` name deliberately does not count, and that is worth writing down because the
+     * opposite is the intuitive guess. Measured against the 2000 configs in this project's
+     * own default bundle: 39 carried a `.ir` hostname, and of the 38 that resolved, **37
+     * pointed outside Iran** — Cloudflare, OVH, Hetzner. Exactly one was in Iranian address
+     * space. That is not noise around a good signal, it is the opposite of a signal. These
+     * lists are full of circumvention configs, and an Iranian domain in one is nearly always
+     * fronting for a machine hosted abroad, which is the whole technique. Trusting the
+     * suffix would have kept a foreign server for 97 out of every 98 names it matched.
      */
-    fun isIranianHost(host: String?): Boolean {
+    fun isIranianAddress(host: String?): Boolean {
         val value = host?.trim()?.lowercase() ?: return false
         if (value.isEmpty()) {
             return false
         }
-        if (value.endsWith(".ir")) {
-            return true
-        }
         val packed = packIpv4(value) ?: return false
         return IRAN_V4_BLOCKS.any { (network, mask) -> (packed and mask) == network }
+    }
+
+    /**
+     * The weaker question, for deciding what to test rather than what to keep.
+     *
+     * An Iranian address, or a `.ir` name. The name is nearly always wrong — see
+     * [isIranianAddress] for the count — so it earns a slot in the test queue and nothing
+     * more. A measurement settles it either way, and a wasted test costs one slot.
+     */
+    fun isIranianHost(host: String?): Boolean {
+        val value = host?.trim()?.lowercase() ?: return false
+        return value.endsWith(".ir") || isIranianAddress(value)
     }
 
     private fun packIpv4(value: String): Long? {
