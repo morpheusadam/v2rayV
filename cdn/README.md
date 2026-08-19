@@ -53,6 +53,8 @@ A file is fetched once per run however many places it is written to.
     app/notice.json
 ```
 
+Cron, every 30 minutes (`0,30 * * * *`), set in hPanel under Advanced → Cron Jobs.
+
 ## Adding a project
 
 Add an entry to `sources.json` and upload it. No code changes.
@@ -101,9 +103,21 @@ to need a shell.
 ## DNS
 
 `bineret.com` is on Cloudflare, not on the host's nameservers, so creating a subdomain in
-hPanel does not create the DNS record. `cdn.bineret.com` needs an A record pointing at
-`82.29.185.21` added at Cloudflare.
+hPanel creates the vhost but no DNS record — the two live in different places and neither
+warns you about the other. That gap is what killed the previous mirror: `cdn.lavzen.com` had
+a vhost, an SSL entry and a website listing in hPanel, and no A record, so the only mirror
+users could select had never once answered.
 
-Until then — and as a permanent fallback — the same directory is reachable at
-`https://bineret.com/cdn/`, which needs no record of its own because the directory is already
-inside the site that resolves.
+`cdn.bineret.com` now has its record:
+
+```
+cdn.bineret.com   A   82.29.185.21   DNS only
+```
+
+The same directory stays reachable at `https://bineret.com/cdn/`, which needs no record of
+its own because it is already inside the site that resolves. That is the fallback worth
+keeping: it is the URL that cannot be broken by a missing subdomain record.
+
+Check both after any DNS change. A vhost answering on port 80 while port 443 fails means the
+record exists and the certificate has not been issued yet, which is a different problem with
+a different fix.
