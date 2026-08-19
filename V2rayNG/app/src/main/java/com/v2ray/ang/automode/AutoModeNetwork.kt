@@ -101,30 +101,34 @@ object AutoModeNetwork {
      * GitHub on demand, so they survive GitHub being blocked from the user's network and
      * nothing else.
      *
-     * This project's own is the only one that is not another way of asking GitHub: it answers
-     * from storage it refreshes in the background, so it survives GitHub being unreachable
-     * too. It sits second only because it is new, and a rung that is reached exactly when
-     * everything else has already failed is the wrong place to find out whether a
-     * week-old subdomain resolves.
+     * This project's own goes first, because it is the only one that is not another way of
+     * asking GitHub: it answers from storage it refreshes on a schedule, so it survives GitHub
+     * being unreachable and not merely GitHub being blocked from this network. It is also the
+     * least likely of the three to appear on a block list, which matters most at the exact
+     * moment a mirror is reached at all.
      */
     val MIRRORS: List<Mirror> = listOf(
         // Plain static files rather than a jsDelivr-style path, because it is a plain static
-        // mirror: a cron job copies the repository's files into a directory and Apache serves
-        // them. The layout is kept identical to the repository's, so this is the upstream URL
-        // with the host swapped and nothing else, with no mapping table to keep in step.
+        // mirror: a cron job copies the repository's files into a directory and the web server
+        // serves them. Under the `v2ray/` namespace because the CDN carries other projects
+        // too; below that the layout is the repository's, so this is the upstream URL with the
+        // host and prefix swapped and nothing else, with no mapping table to keep in step.
         //
-        // Listed second rather than first while the host is new. A mirror is only reached
-        // when the list host has already failed, so the one offered first should be the one
-        // most likely to answer, and a public CDN that has been up for years beats a
-        // subdomain that went up this week. Move it back to the front once it has a record.
+        // Served from the main domain rather than the cdn. subdomain that points at the same
+        // directory. The subdomain needs a DNS record; this path needs none, because the
+        // directory is already inside the site that resolves. That is not a theoretical
+        // preference — the version of this list that shipped before pointed at
+        // `cdn.lavzen.com`, whose record was never created, so the mirror every user could
+        // select had never once answered. A URL nobody can verify at a glance is a URL that
+        // fails silently, and this one is verified by fetching it.
+        Mirror(
+            name = "v2rayV mirror",
+            operator = "this app's author",
+        ) { _, _, _, path -> "https://bineret.com/cdn/v2ray/$path" },
         Mirror(
             name = "jsDelivr",
             operator = "jsDelivr, a public CDN",
         ) { user, repo, ref, path -> "https://cdn.jsdelivr.net/gh/$user/$repo@$ref/$path" },
-        Mirror(
-            name = "v2rayV mirror",
-            operator = "this app's author",
-        ) { _, _, _, path -> "https://cdn.lavzen.com/$path" },
         Mirror(
             name = "raw.githack",
             operator = "githack, a public CDN",

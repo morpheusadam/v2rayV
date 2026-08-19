@@ -1,0 +1,34 @@
+{
+  "_comment": "What the CDN carries. Adding a project is an entry here, not a change to sync.php.",
+
+  "roots": [
+    {
+      "name": "bineret",
+      "path": "/home/u523965318/domains/bineret.com/public_html/cdn",
+      "urls": ["https://cdn.bineret.com/", "https://bineret.com/cdn/"]
+    },
+    {
+      "name": "lavzen",
+      "path": "/home/u523965318/domains/lavzen.com/public_html/cdn",
+      "urls": ["https://lavzen.com/cdn/"],
+      "retiring": true,
+      "_why": "Kept only until the app builds that point at lavzen have aged out. Delete this entry, then the directory."
+    }
+  ],
+
+  "namespaces": [
+    {
+      "name": "v2ray",
+      "title": "v2rayV subscription and proxy lists",
+      "upstream": "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/",
+      "prefixes": ["v2ray", ""],
+      "_prefixes_why": "The empty prefix is the pre-namespace layout that shipped apps still ask for. Drop it once those versions are gone; new clients should use v2ray/.",
+      "files": [
+        "subs/bundles/best.txt",
+        "subs/all.txt",
+        "proxies/all.txt",
+        "app/notice.json"
+      ]
+    }
+  ]
+}
