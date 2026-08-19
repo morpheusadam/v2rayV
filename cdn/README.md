@@ -86,8 +86,20 @@ Cron, every 30 minutes — set in hPanel, since `crontab` is not available over 
 host:
 
 ```
-/usr/bin/php /home/u523965318/cdn/sync.php >> /home/u523965318/cdn/logs/sync.log 2>&1
+/usr/bin/php /home/u523965318/cdn/sync.php
 ```
+
+hPanel runs the command without a shell, so a `>>` redirection appended to it is passed to
+PHP as an argument instead of redirecting anything, and the log file never appears. The run's
+output is kept by hPanel itself, under "View Output" beside the job. To get a real log file,
+wrap the whole thing:
+
+```
+/bin/sh -c "/usr/bin/php /home/u523965318/cdn/sync.php >> /home/u523965318/cdn/logs/sync.log 2>&1"
+```
+
+Either way `status.json` is the better freshness signal, because it is reachable over HTTP
+and the log is not.
 
 ## Checking it
 

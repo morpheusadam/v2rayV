@@ -24,7 +24,7 @@ class AutoModeNetworkTest {
         // A static mirror: the repository layout is reproduced under the path, so this is the
         // upstream URL with the host and prefix swapped and nothing else.
         assertEquals(
-            listOf("https://bineret.com/cdn/v2ray/subs/all.txt"),
+            listOf("https://cdn.bineret.com/v2ray/subs/all.txt"),
             AutoModeNetwork.mirrorsFor(subsUrl, enabled = true, index = 0)
         )
         assertEquals(

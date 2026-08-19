@@ -114,17 +114,20 @@ object AutoModeNetwork {
         // too; below that the layout is the repository's, so this is the upstream URL with the
         // host and prefix swapped and nothing else, with no mapping table to keep in step.
         //
-        // Served from the main domain rather than the cdn. subdomain that points at the same
-        // directory. The subdomain needs a DNS record; this path needs none, because the
-        // directory is already inside the site that resolves. That is not a theoretical
-        // preference — the version of this list that shipped before pointed at
-        // `cdn.lavzen.com`, whose record was never created, so the mirror every user could
-        // select had never once answered. A URL nobody can verify at a glance is a URL that
-        // fails silently, and this one is verified by fetching it.
+        // The host here was fetched successfully before being written down, which is a rule
+        // this line earned the hard way: the version that shipped before pointed at
+        // `cdn.lavzen.com`, and that subdomain had a vhost, a certificate entry and a panel
+        // listing but no DNS record — so the one mirror a user could select had never once
+        // answered, on any install, for as long as it was offered. Nothing about the config
+        // looked wrong, because the missing piece lived with the DNS provider rather than
+        // with the host.
+        //
+        // `https://bineret.com/cdn/v2ray/` reaches the same directory and needs no record of
+        // its own, so it stays the fallback to move to if this name ever stops resolving.
         Mirror(
             name = "v2rayV mirror",
             operator = "this app's author",
-        ) { _, _, _, path -> "https://bineret.com/cdn/v2ray/$path" },
+        ) { _, _, _, path -> "https://cdn.bineret.com/v2ray/$path" },
         Mirror(
             name = "jsDelivr",
             operator = "jsDelivr, a public CDN",
