@@ -201,26 +201,26 @@ object IranMode {
     /**
      * Whether a host is in Iran on the evidence of the address itself.
      *
-     * Only an address in [IRAN_V4_BLOCKS] counts. Anything else — a domain of any kind, an
+     * Only an address in [IranAddressSpace] counts. Anything else — a domain of any kind, an
      * IPv6 literal — is unknown, and unknown is not a yes, because this answer is used
      * exactly where a measurement is missing and a wrong yes is kept rather than caught.
      *
      * A `.ir` name deliberately does not count, and that is worth writing down because the
      * opposite is the intuitive guess. Measured against the 2000 configs in this project's
-     * own default bundle: 39 carried a `.ir` hostname, and of the 38 that resolved, **37
-     * pointed outside Iran** — Cloudflare, OVH, Hetzner. Exactly one was in Iranian address
-     * space. That is not noise around a good signal, it is the opposite of a signal. These
-     * lists are full of circumvention configs, and an Iranian domain in one is nearly always
-     * fronting for a machine hosted abroad, which is the whole technique. Trusting the
-     * suffix would have kept a foreign server for 97 out of every 98 names it matched.
+     * own default bundle: 48 carry a `.ir` hostname, and of the 47 that resolve, **39 point
+     * outside Iran** — mostly Cloudflare and Fastly. Eight are genuinely Iranian. So the
+     * suffix is right about one time in six, which is enough to be worth a test and nowhere
+     * near enough to connect a bank session on. These lists are circumvention configs, and
+     * an Iranian domain in one is usually fronting for a machine hosted abroad — that is
+     * the technique, not an accident.
      */
     fun isIranianAddress(host: String?): Boolean {
         val value = host?.trim()?.lowercase() ?: return false
         if (value.isEmpty()) {
             return false
         }
-        val packed = packIpv4(value) ?: return false
-        return IRAN_V4_BLOCKS.any { (network, mask) -> (packed and mask) == network }
+        val packed = IranAddressSpace.packIpv4(value) ?: return false
+        return IranAddressSpace.contains(packed)
     }
 
     /**
@@ -233,80 +233,6 @@ object IranMode {
     fun isIranianHost(host: String?): Boolean {
         val value = host?.trim()?.lowercase() ?: return false
         return value.endsWith(".ir") || isIranianAddress(value)
-    }
-
-    private fun packIpv4(value: String): Long? {
-        val parts = value.split('.')
-        if (parts.size != 4) {
-            return null
-        }
-        var packed = 0L
-        for (part in parts) {
-            val octet = part.toIntOrNull() ?: return null
-            if (octet !in 0..255) {
-                return null
-            }
-            packed = (packed shl 8) or octet.toLong()
-        }
-        return packed
-    }
-
-    /**
-     * Large Iranian IPv4 allocations, as (network, mask) pairs.
-     *
-     * A prior, not a register. These are the big consumer and hosting blocks — TCI, MCI,
-     * Irancell, the main data centres — and the list is neither complete nor guaranteed
-     * current, because allocations move. That is affordable given where it is used: a hit
-     * means "test this one first", which costs one test slot when it is wrong, and it
-     * stands in for a missing measurement rather than overruling one. Shipping the full
-     * geoip table to make it exact would mean parsing a megabyte of protobuf to reorder a
-     * test queue.
-     */
-    private val IRAN_V4_BLOCKS: List<Pair<Long, Long>> by lazy {
-        listOf(
-            "2.144.0.0/12", "5.22.192.0/19", "5.52.0.0/16", "5.112.0.0/12",
-            "31.2.128.0/17", "31.24.200.0/21", "31.56.0.0/13",
-            "37.32.0.0/19", "37.98.0.0/16", "37.129.0.0/16", "37.148.0.0/17",
-            "37.156.0.0/14", "37.191.0.0/17", "37.254.0.0/15",
-            "46.32.0.0/19", "46.38.128.0/18", "46.100.0.0/14", "46.143.0.0/17",
-            "46.209.0.0/16", "46.224.0.0/15", "46.245.0.0/17",
-            "62.60.128.0/18", "62.102.128.0/19", "62.193.0.0/19", "62.220.96.0/19",
-            "77.36.128.0/17", "77.104.64.0/18",
-            "78.38.0.0/15", "78.109.192.0/20", "78.157.32.0/19",
-            "79.127.0.0/17", "79.132.192.0/18", "79.175.128.0/18",
-            "80.75.0.0/19", "80.191.0.0/16", "80.210.0.0/16", "80.242.0.0/19",
-            "80.249.112.0/20", "80.253.128.0/19",
-            "81.12.0.0/17", "81.16.112.0/20", "81.28.32.0/19", "81.31.160.0/19",
-            "81.90.144.0/20", "81.91.128.0/18", "82.99.192.0/18",
-            "84.241.0.0/18", "85.9.64.0/19", "85.133.128.0/17", "85.185.0.0/16",
-            "86.104.32.0/19", "87.107.0.0/16", "87.236.208.0/20", "87.247.160.0/19",
-            "88.135.32.0/19", "89.165.0.0/16", "91.98.0.0/15",
-            "92.42.48.0/21", "92.114.16.0/20", "92.242.192.0/19",
-            "93.110.0.0/15", "93.117.0.0/17", "93.126.0.0/17",
-            "94.74.128.0/17", "94.101.128.0/19", "94.182.0.0/15", "94.184.0.0/15",
-            "95.38.0.0/16", "95.162.0.0/16",
-            "109.162.128.0/17", "109.203.128.0/18",
-            "151.232.0.0/13", "151.240.0.0/13",
-            "178.22.120.0/21", "178.131.0.0/16",
-            "185.51.200.0/22", "185.55.224.0/22",
-            "188.121.96.0/19", "188.136.128.0/17", "188.158.0.0/15", "188.229.0.0/16",
-            "212.33.192.0/19", "213.176.0.0/19", "213.217.32.0/19",
-            "217.24.144.0/20", "217.218.0.0/15",
-        ).mapNotNull(::parseCidr)
-    }
-
-    private fun parseCidr(cidr: String): Pair<Long, Long>? {
-        val slash = cidr.indexOf('/')
-        if (slash < 0) {
-            return null
-        }
-        val network = packIpv4(cidr.substring(0, slash)) ?: return null
-        val bits = cidr.substring(slash + 1).toIntOrNull() ?: return null
-        if (bits !in 0..32) {
-            return null
-        }
-        val mask = if (bits == 0) 0L else (0xFFFFFFFFL shl (32 - bits)) and 0xFFFFFFFFL
-        return (network and mask) to mask
     }
 
     // ---- routing ----------------------------------------------------------------

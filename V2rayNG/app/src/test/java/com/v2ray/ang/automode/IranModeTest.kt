@@ -110,7 +110,7 @@ class IranModeTest {
     @Test
     fun `the address counts as evidence alongside the remark`() {
         assertTrue(IranMode.looksIranian(profile(remarks = "🇮🇷 Tehran")))
-        assertTrue(IranMode.looksIranian(profile(remarks = "node 7", server = "91.98.5.5")))
+        assertTrue(IranMode.looksIranian(profile(remarks = "node 7", server = "2.144.0.1")))
         assertFalse(IranMode.looksIranian(profile(remarks = "node 7", server = "8.8.8.8")))
     }
 
@@ -122,7 +122,7 @@ class IranModeTest {
     @Test
     fun `a server labelled elsewhere is dropped unless its address says otherwise`() {
         assertTrue(IranMode.labelledElsewhere(profile(remarks = "🇩🇪 Frankfurt", server = "8.8.8.8")))
-        assertFalse(IranMode.labelledElsewhere(profile(remarks = "🇩🇪 Frankfurt", server = "91.98.5.5")))
+        assertFalse(IranMode.labelledElsewhere(profile(remarks = "🇩🇪 Frankfurt", server = "2.144.0.1")))
         assertFalse(IranMode.labelledElsewhere(profile(remarks = "fast node 3", server = "8.8.8.8")))
     }
 
@@ -139,7 +139,7 @@ class IranModeTest {
 
     @Test
     fun `a measured foreign exit is never kept, however it is labelled`() {
-        assertFalse(IranMode.isIranianExit(measured("DE", remarks = "🇮🇷 Iran", server = "91.98.5.5")))
+        assertFalse(IranMode.isIranianExit(measured("DE", remarks = "🇮🇷 Iran", server = "2.144.0.1")))
         assertTrue(IranMode.isIranianExit(measured("IR")))
         assertTrue(IranMode.isIranianExit(measured("ir")))
     }
@@ -151,19 +151,19 @@ class IranModeTest {
      */
     @Test
     fun `with no measurement the address decides`() {
-        assertTrue(IranMode.isIranianExit(measured(null, server = "91.98.5.5")))
+        assertTrue(IranMode.isIranianExit(measured(null, server = "2.144.0.1")))
         assertFalse(IranMode.isIranianExit(measured(null, server = "8.8.8.8")))
     }
 
     /**
      * The regression this mode would otherwise ship with.
      *
-     * Measured against the 2000 configs in the project's own default bundle: 39 carried a
-     * `.ir` hostname and 37 of the 38 that resolved pointed outside Iran — Cloudflare, OVH,
-     * Hetzner. An Iranian domain in a circumvention list is nearly always fronting for a
-     * machine hosted abroad. Believing the suffix here would hand a German server a bank
-     * session and call the run a success, which is the exact failure the mode exists to
-     * prevent, so a name never survives the keep decision on its own.
+     * Measured against the 2000 configs in the project's own default bundle: 48 carry a
+     * `.ir` hostname and 39 of the 47 that resolve point outside Iran, mostly at Cloudflare
+     * and Fastly. Right about one time in six. Believing the suffix would hand a foreign
+     * server a bank session five times out of six and call the run a success, which is the
+     * exact failure this mode exists to prevent, so a name never survives the keep decision
+     * on its own — it buys a test and nothing more.
      */
     @Test
     fun `an ir domain is never enough to keep a server`() {
@@ -194,7 +194,47 @@ class IranModeTest {
     @Test
     fun `a measurement overrules the address`() {
         assertTrue(IranMode.isIranianExit(measured("IR", server = "8.8.8.8")))
-        assertFalse(IranMode.isIranianExit(measured("DE", server = "91.98.5.5")))
+        assertFalse(IranMode.isIranianExit(measured("DE", server = "2.144.0.1")))
+    }
+
+    /**
+     * The addresses the hand-written table used to claim, checked against the registry.
+     *
+     * Every one of these was rounded outward from a real Iranian allocation into space that
+     * belongs to somebody else, and always in the direction that produces a false yes:
+     * `46.100.0.0/14` swallowed DigitalOcean's `46.101.0.0/16`, `91.98.0.0/15` swallowed a
+     * German host's `/16`, `46.224.0.0/15` the same, and `151.243.0.0` is registered to the
+     * UAE. Two of them turned up in this project's own default bundle with reverse DNS
+     * pointing straight at Hetzner.
+     */
+    @Test
+    fun `address space the old table wrongly claimed is refused`() {
+        assertFalse(IranMode.isIranianAddress("46.101.239.26"))   // DigitalOcean, US
+        assertFalse(IranMode.isIranianAddress("91.98.39.30"))     // Hetzner, DE
+        assertFalse(IranMode.isIranianAddress("46.225.208.108"))  // Hetzner, DE
+        assertFalse(IranMode.isIranianAddress("151.243.190.41"))  // AE
+    }
+
+    /** Real allocations still answer, including at the edges of a block. */
+    @Test
+    fun `genuine iranian address space is recognised`() {
+        assertTrue(IranMode.isIranianAddress("2.144.0.1"))
+        assertTrue(IranMode.isIranianAddress("2.176.0.1"))
+        assertTrue(IranMode.isIranianAddress("5.112.0.1"))
+        assertTrue(IranMode.isIranianAddress("178.22.122.100"))
+        assertTrue(IranMode.isIranianAddress("217.218.155.155"))
+    }
+
+    /**
+     * The block boundary itself, since the lookup is a binary search and an off-by-one there
+     * would show up as exactly the kind of neighbouring-network false positive being fixed.
+     */
+    @Test
+    fun `block boundaries are exact`() {
+        assertTrue(IranMode.isIranianAddress("2.144.0.0"))        // first address of 2.144.0.0/14
+        assertTrue(IranMode.isIranianAddress("2.147.255.255"))    // last address of it
+        assertFalse(IranMode.isIranianAddress("2.148.0.0"))       // one past the end
+        assertFalse(IranMode.isIranianAddress("2.143.255.255"))   // one before the start
     }
 
     // ---- the country filter -----------------------------------------------------

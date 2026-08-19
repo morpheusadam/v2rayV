@@ -102,7 +102,14 @@ press power.
 it connects you *into* it. For Iranians living abroad, whose bank, insurer, tax office and
 domestic app store all look at where the request came from and refuse a foreign address.
 
-Same pipeline, same measurements, three deliberate differences:
+It is one setting reachable from two places — the switch at the top of the Auto Mode screen,
+and the **IR** chip in the country list, which is where people look for it. Picking IR there
+turns the mode on rather than adding a filter value, because the two cannot mean the same
+thing: an ordinary country filter prefers what you asked for and then fills the remaining
+slots with the fastest servers found anywhere, and that fallback is exactly what has to not
+happen here.
+
+Same pipeline, same measurements, four deliberate differences:
 
 | In Iran mode | Why |
 |---|---|
@@ -114,8 +121,35 @@ Same pipeline, same measurements, three deliberate differences:
 Expect it to be slower than a normal connection: Iran's link to the outside world is the
 limit, not the server. The acceptance bar drops accordingly, from 70% of your line to 10%.
 
-Public subscription lists rarely carry Iranian exits. The mode works best pointed at a
-server of your own — add it under **Auto Mode → Edit links**, or as an ordinary profile.
+### How "Iranian" is decided
+
+A measured exit country decides what is kept. When the tunnel's exit lookup answers, that
+answer is final in both directions — a server proven to come out in Germany is dropped
+however fast it was.
+
+When the lookup returns nothing, and it often does, the address decides. Only the address:
+matched against Iran's IPv4 allocations as the regional registry publishes them, regenerated
+from RIPE rather than typed by hand. A hostname ending in `.ir` does **not** count. Measured
+across this project's own default bundle of 2000 configs, 48 carry a `.ir` name and only 8
+of them resolve into Iranian address space — the rest are Cloudflare and Fastly fronts,
+which is the whole technique those lists are built on. A name that is right one time in six
+earns a place in the test queue and nothing more.
+
+The table this replaced was written by hand and rounded outward, and every rounding went the
+same way: it claimed a `/12` where the registry says `/14`, swallowed DigitalOcean's
+`46.101.0.0/16` and a German host's `91.98.0.0/16`, and had no entry at all for
+`185.143.232.0/22` — which is where most of the genuinely Iranian servers in the bundle
+actually live. It invented address space and missed real space at the same time, and neither
+failure announces itself.
+
+### How much there is to find
+
+Honest numbers, measured against the default bundle rather than estimated: of 2000 configs,
+**27 hosts** land in Iranian address space, **33 configs** point at them, and **12** also
+pass the security bar above. That is a thin pool, and it is the real reason to point this
+mode at a server of your own — add it under **Auto Mode → Edit links**, or as an ordinary
+profile. Public subscription lists are built to get people *out* of Iran, so exits *inside*
+it are incidental.
 
 ---
 
@@ -190,9 +224,22 @@ is the actual question being answered.
 The difference in the last column is the reason the first one exists. The public CDNs read
 from GitHub on demand, so they are three front doors to one room: they cover a network that
 blocks `raw.githubusercontent.com`, and nothing else. The first-party mirror
-([`mirror/`](mirror/)) answers from its own object storage and refreshes in the background,
-including on a schedule, so the copy is already warm during exactly the conditions that make
-fetching it on demand fail.
+([`cdn/`](cdn/)) serves plain static files that cron refreshes every half hour, so the copy
+is already warm during exactly the conditions that make fetching it on demand fail. Nothing
+answers a request there through PHP — on shared hosting that is the difference between the
+plan's process limits sitting between a user and their list, and not.
+
+It is served from `cdn.bineret.com`, under a `v2ray/` namespace because the same CDN carries
+other projects. `https://bineret.com/cdn/v2ray/` reaches the same directory and needs no DNS
+record of its own, which is the fallback worth knowing about: the previous mirror pointed at
+a subdomain whose record had never been created, so the one mirror a user could select had
+never answered on any install for as long as it was offered. Everything in that setup looked
+right, because the missing piece lived with the DNS provider rather than with the host. The
+current host was checked by fetching the files, not by reading settings back.
+
+`https://cdn.bineret.com/status.json` reports every mirrored file's size, digest and when it
+last actually changed, so "is the mirror stale" is a GET rather than an SSH session — asked,
+as a rule, at the moment nobody wants to need a shell.
 
 Its lists come from **[v2ray-config](https://github.com/morpheusadam/v2ray-config)**, a
 companion repository that rebuilds itself daily — every subscription proved to carry configs,
@@ -350,11 +397,13 @@ V2rayNG/app/src/main/java/com/v2ray/ang/
 │   ├── BetaSampler.kt           Thompson sampling over source evidence
 │   ├── ProxiedFetch.kt          direct → CDN mirror → proxy → bundled snapshot
 │   ├── AutoModeProxyFinder.kt   sweeps candidates to refill the ladder
+│   ├── IranAddressSpace.kt      Iran's IPv4 allocations, generated from the RIPE registry
 │   └── AutoModeScheduler.kt     background top-ups when the reserve runs low
 ├── notice/                      remote notice slot and in-app update
 └── ui/
     ├── dashboard/               the instrument panel, connecting card, notice card
     └── automode/                Auto Mode screens and the source list
+cdn/                             the first-party mirror: manifest, sync runner, .htaccess
 design/logo/                     logo sources, generator and exported assets
 docs/screenshots/                the images in this README, straight off a device
 ```
