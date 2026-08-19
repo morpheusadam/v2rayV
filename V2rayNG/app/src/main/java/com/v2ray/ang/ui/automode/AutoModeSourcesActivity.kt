@@ -39,6 +39,7 @@ import com.v2ray.ang.R
 import com.v2ray.ang.automode.AutoModeNetwork
 import com.v2ray.ang.automode.AutoModeSource
 import com.v2ray.ang.automode.CountryHint
+import com.v2ray.ang.automode.IranMode
 import com.v2ray.ang.extension.toast
 import com.v2ray.ang.ui.base.BaseComponentActivity
 import com.v2ray.ang.ui.compose.AppTopBar
@@ -275,9 +276,15 @@ private fun AutoModeSourcesScreen(
                 Spacer(Modifier.height(8.dp))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     CountryHint.pickerOptions.forEach { (code, name) ->
+                        // Iran is the switch at the top of the screen wearing a chip, so it
+                        // stays tappable while the mode is on — it is the way back out — and
+                        // the rest grey out, because the mode overrides them.
+                        val isIran = code == IranMode.COUNTRY
                         FilterChip(
-                            selected = !state.iranMode && state.countryFilter.contains(code),
-                            enabled = !state.iranMode,
+                            selected =
+                                if (isIran) state.iranMode
+                                else !state.iranMode && state.countryFilter.contains(code),
+                            enabled = isIran || !state.iranMode,
                             onClick = { viewModel.toggleCountry(code) },
                             label = { Text("$code — $name") },
                         )

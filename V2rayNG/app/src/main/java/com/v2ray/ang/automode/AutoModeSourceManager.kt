@@ -87,6 +87,15 @@ object AutoModeSourceManager {
                     if (store.speedByGuid == null) store.speedByGuid = mutableMapOf()
                     @Suppress("SENSELESS_COMPARISON")
                     if (store.countryByGuid == null) store.countryByGuid = mutableMapOf()
+
+                    // A store written before "IR" meant the mode can still carry it as an
+                    // ordinary filter value, where it would prefer Iran and then quietly top
+                    // up from anywhere. Read as the mode it was always asking for.
+                    val (countries, wantsIran) = IranMode.splitFilter(store.countryFilter)
+                    if (wantsIran) {
+                        store.countryFilter = countries.toMutableList()
+                        store.iranMode = true
+                    }
                     return store
                 }
             }
@@ -224,8 +233,18 @@ object AutoModeSourceManager {
         save()
     }
 
+    /**
+     * Picking "IR" here turns Iran mode on instead of adding a filter value — see
+     * [IranMode.splitFilter] for why the two cannot mean the same thing. Switching it back
+     * off goes through [setIranMode]; the code never sits in this list.
+     */
     fun setCountryFilter(countries: List<String>) {
-        getStore().countryFilter = countries.toMutableList()
+        val (rest, wantsIran) = IranMode.splitFilter(countries)
+        val store = getStore()
+        store.countryFilter = rest.toMutableList()
+        if (wantsIran) {
+            store.iranMode = true
+        }
         save()
     }
 

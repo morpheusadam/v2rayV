@@ -133,15 +133,21 @@ object CountryHint {
 
     /**
      * Countries offered in the Auto Mode picker, as code to display name. Ordered by how
-     * often they turn up as exit locations in public subscription lists.
+     * often they turn up as exit locations in public subscription lists, except for Iran.
+     *
+     * Iran leads because it is the one entry that does not behave like the others — it is
+     * Iran mode rather than a preference, see [com.v2ray.ang.automode.IranMode.splitFilter]
+     * — and an option with different rules should not be buried two rows down among the
+     * ones it differs from.
      */
     val pickerOptions: List<Pair<String, String>> = listOf(
+        "IR" to "Iran",
         "NL" to "Netherlands", "DE" to "Germany", "GB" to "United Kingdom",
         "US" to "United States", "FR" to "France", "FI" to "Finland",
         "SE" to "Sweden", "PL" to "Poland", "AT" to "Austria",
         "CH" to "Switzerland", "CA" to "Canada", "JP" to "Japan",
         "SG" to "Singapore", "KR" to "Korea", "TR" to "Turkey",
-        "AE" to "Emirates", "RU" to "Russia", "IR" to "Iran", "IN" to "India",
+        "AE" to "Emirates", "RU" to "Russia", "IN" to "India",
         "AU" to "Australia", "BR" to "Brazil", "IT" to "Italy", "ES" to "Spain",
         "RO" to "Romania", "LT" to "Lithuania", "LV" to "Latvia", "EE" to "Estonia",
         "CZ" to "Czechia", "IE" to "Ireland", "HK" to "Hong Kong", "TW" to "Taiwan",

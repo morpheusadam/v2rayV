@@ -156,6 +156,40 @@ class IranModeTest {
         assertFalse(IranMode.isIranianExit(measured(null, server = "8.8.8.8")))
     }
 
+    // ---- the country filter -----------------------------------------------------
+
+    /**
+     * The whole point of routing IR out of the filter. Left in the ordinary filter it would
+     * mean "prefer Iran, then top up from anywhere", which hands a user who picked Iran for
+     * their bank a fast German server and calls the run a success.
+     */
+    @Test
+    fun `picking iran is taken out of the filter and asked for as the mode`() {
+        val (rest, wantsIran) = IranMode.splitFilter(listOf("NL", "IR", "DE"))
+
+        assertTrue(wantsIran)
+        assertEquals(listOf("NL", "DE"), rest)
+    }
+
+    /** Lower case and stray spacing come from stored data and hand-typed filters alike. */
+    @Test
+    fun `iran is recognised however it was written`() {
+        assertTrue(IranMode.splitFilter(listOf("ir")).second)
+        assertTrue(IranMode.splitFilter(listOf(" Ir ")).second)
+    }
+
+    /**
+     * The other countries survive untouched, so switching the mode off gives back exactly
+     * the filter that was there before.
+     */
+    @Test
+    fun `a filter without iran is handed back unchanged`() {
+        val (rest, wantsIran) = IranMode.splitFilter(listOf("NL", "DE"))
+
+        assertFalse(wantsIran)
+        assertEquals(listOf("NL", "DE"), rest)
+    }
+
     // ---- routing ----------------------------------------------------------------
 
     @Test

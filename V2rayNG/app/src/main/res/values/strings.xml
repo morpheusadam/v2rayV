@@ -570,12 +570,14 @@
     <string name="automode_runs_so_far">%1$d runs so far, sampling %2$d sources per run</string>
     <string name="automode_keep_count">Keep the best %1$d servers</string>
     <string name="automode_filter_any_hint">Select none for any.</string>
-    <string name="automode_country_hint">Matched against the address a server actually exits from, measured during the test. If too few match, the remaining slots are filled with the fastest found anywhere.</string>
+    <string name="automode_country_hint">Matched against the address a server actually exits from, measured during the test. If too few match, the remaining slots are filled with the fastest found anywhere.
+
+IR is the exception, and it is the switch at the top of this screen: picking it keeps Iranian servers only, and keeps nothing rather than falling back to somewhere else.</string>
     <string name="automode_section_iran">IRAN (IR)</string>
     <string name="automode_iran_label">Connect through an Iranian IP</string>
     <string name="automode_iran_hint">For reaching Iranian banks, insurers and domestic apps from outside Iran. They check where a request comes from and refuse a foreign address, so Auto Mode keeps only servers it has measured coming out inside Iran — the best of those, by the same tests it always runs.\n\nUnsafe configs are refused rather than ranked low: no SOCKS or HTTP proxies, nothing carrying your traffic unencrypted, and nothing that skips certificate checking. This is your bank.\n\nExpect it to be slower than a normal connection. Iran\'s link to the outside world is the limit, not the server.</string>
     <string name="automode_iran_active">On. Iranian sites now go through the tunnel instead of around it, and nothing outside Iran will be kept — if no Iranian server is found the run says so rather than quietly connecting you somewhere else.</string>
-    <string name="automode_country_overridden">Overridden while Iran mode is on.</string>
+    <string name="automode_country_overridden">Iran mode is on, so these do not apply. Tap IR again to turn it off and get them back.</string>
     <string name="automode_acc_settings">Auto Mode settings</string>
     <string name="automode_no_sources">No subscription sources yet. Open Auto Mode settings and paste some links.</string>
     <string name="automode_stop_button">Stop Auto Mode %1$s</string>

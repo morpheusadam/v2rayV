@@ -129,6 +129,31 @@ object IranMode {
         return value.contains("gcm") || value.contains("poly1305")
     }
 
+    // ---- the country filter -----------------------------------------------------
+
+    /**
+     * Separates a request for Iran out of an ordinary country filter.
+     *
+     * "IR" appears in the country picker because that is where somebody looks for it, but
+     * it cannot mean there what every other code means. The ordinary filter prefers the
+     * countries asked for and then fills the remaining slots with the fastest servers found
+     * anywhere, which is the right trade when the country is a preference — and the exact
+     * silent failure this mode exists to rule out when it is not. A user who picked Iran to
+     * reach their bank and was handed a fast German server would be told the run succeeded
+     * and would still be refused at the bank.
+     *
+     * So picking Iran turns the mode on rather than adding a filter value, and the two
+     * controls are one setting seen from two places. The other countries are left in the
+     * filter untouched: the mode overrides them while it is on, and they come back
+     * unchanged when it is switched off.
+     *
+     * @return the codes that stay an ordinary filter, and whether Iran was among them.
+     */
+    fun splitFilter(countries: List<String>): Pair<List<String>, Boolean> {
+        val rest = countries.filterNot { it.trim().uppercase() == COUNTRY }
+        return rest to (rest.size != countries.size)
+    }
+
     // ---- is this thing Iranian --------------------------------------------------
 
     /**

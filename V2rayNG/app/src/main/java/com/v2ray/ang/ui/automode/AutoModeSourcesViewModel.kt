@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.v2ray.ang.automode.AutoModeSource
 import com.v2ray.ang.automode.AutoModeSourceManager
+import com.v2ray.ang.automode.IranMode
 import com.v2ray.ang.enums.EConfigType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -133,7 +134,18 @@ class AutoModeSourcesViewModel : ViewModel() {
         }
     }
 
+    /**
+     * Iran is the one chip that is not a filter value. It is the switch at the top of the
+     * screen, reached from where somebody would look for it — see [IranMode.splitFilter].
+     * Handled here as well as in the store because turning it *off* has to be a toggle of
+     * the mode, not the removal of a code that was never in the list.
+     */
     fun toggleCountry(code: String) {
+        if (code.uppercase() == IranMode.COUNTRY) {
+            setIranMode(!_state.value.iranMode)
+            return
+        }
+
         viewModelScope.launch {
             val current = _state.value.countryFilter.toMutableList()
             if (!current.remove(code)) current.add(code)
