@@ -161,7 +161,15 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-files
-          find release -type f -name '*.apk' -exec cp {} release-files/ \;
+
+          # The F-Droid flavour is built and kept as a workflow artifact, but it does not go
+          # on the release page. It carries applicationIdSuffix ".fdroid", so it installs
+          # beside an existing copy instead of updating it and then never receives an update
+          # of its own — someone who picks it off the list by mistake ends up with two apps
+          # and no upgrade path. Every release before 2.4.0 carried only this flavour because
+          # they were uploaded by hand; 2.4.0 was the first green CI build and published both,
+          # which is exactly how that trap got sprung. F-Droid builds from source anyway.
+          find release -type f -name '*.apk' ! -name '*-fdroid-*' -exec cp {} release-files/ \;
 
           if [ -z "${GPG_PRIVATE_KEY:-}" ]; then
             echo "::warning::GPG_PRIVATE_KEY is not set — publishing the APKs without detached signatures."

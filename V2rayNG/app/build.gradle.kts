@@ -53,8 +53,10 @@ android {
         targetSdk = 37
         // 2.4.0 adds Iran mode — connecting *into* Iran so an Iranian bank sees an Iranian
         // address — which is a feature rather than a fix, so the minor number moves.
-        versionCode = 746
-        versionName = "2.4.0"
+        // 2.4.1 is fixes only: the app's own name in the F-Droid build, and a power button
+        // that stops a scan instead of ignoring the press.
+        versionCode = 747
+        versionName = "2.4.1"
 
         val abiFilterList = (properties["ABI_FILTERS"] as? String)?.split(';')
         splits {
