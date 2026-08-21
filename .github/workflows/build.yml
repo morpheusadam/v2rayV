@@ -150,18 +150,32 @@ jobs:
         with:
           path: release
 
+      # The detached GPG signatures are an extra on top of the APK's own signing key, which
+      # is what Android actually verifies and what decides whether an update installs. So a
+      # missing GPG key must not cost the release: without one the APKs still go up, and the
+      # log says plainly that they went up unsigned rather than leaving it to be inferred
+      # from an absent .sig file. Setting GPG_PRIVATE_KEY turns the signatures back on.
       - name: Sign APK files
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
         run: |
-          printf '%s' "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
-          KEY=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')
+          set -euo pipefail
           mkdir -p release-files
+          find release -type f -name '*.apk' -exec cp {} release-files/ \;
 
-          find release -type f -name '*.apk' | while read apk; do
-            cp "$apk" release-files/
-            gpg --batch --yes --local-user "$KEY" --detach-sign --output "release-files/$(basename "$apk").sig" "$apk"
+          if [ -z "${GPG_PRIVATE_KEY:-}" ]; then
+            echo "::warning::GPG_PRIVATE_KEY is not set — publishing the APKs without detached signatures."
+            exit 0
+          fi
+
+          printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --import
+          KEY=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')
+
+          for apk in release-files/*.apk; do
+            gpg --batch --yes --local-user "$KEY" --detach-sign --output "${apk}.sig" "$apk"
           done
 
-          gpg --armor --export "$KEY" > release-files/v2rayN-public-key.asc
+          gpg --armor --export "$KEY" > release-files/v2rayV-public-key.asc
 
       - name: Upload APKs, signatures and public key to release
         uses: svenstaro/upload-release-action@v2
