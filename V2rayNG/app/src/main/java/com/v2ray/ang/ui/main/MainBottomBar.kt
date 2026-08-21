@@ -74,6 +74,11 @@ fun MainBottomBar(
                 }
             }
         }
+        // A scan is as much a thing to stop as a tunnel is, and the button that stops things
+        // is this one. Showing "play" through four minutes of scanning invited exactly the
+        // press that then did nothing, because the only cancel was on the row above and in
+        // the notification.
+        val stops = isRunning || autoMode.running
         FloatingActionButton(
             onClick = { onAction(MainAction.ToggleService) },
             modifier = Modifier
@@ -81,15 +86,15 @@ fun MainBottomBar(
                 .padding(end = 24.dp)
                 .offset(y = (-28).dp)
                 .navigationBarsPadding(),
-            containerColor = if (isRunning) colorFabActive
+            containerColor = if (stops) colorFabActive
             else if (isDarkTheme) colorFabInactiveDark
             else colorFabInactiveLight
         ) {
             Icon(
-                painter = if (isRunning) painterResource(R.drawable.ic_stop_24dp)
+                painter = if (stops) painterResource(R.drawable.ic_stop_24dp)
                 else painterResource(R.drawable.ic_play_24dp),
                 contentDescription = stringResource(
-                    if (isRunning) R.string.acc_stop else R.string.acc_start
+                    if (stops) R.string.acc_stop else R.string.acc_start
                 ),
                 tint = Color.White,
                 modifier = Modifier.size(24.dp)

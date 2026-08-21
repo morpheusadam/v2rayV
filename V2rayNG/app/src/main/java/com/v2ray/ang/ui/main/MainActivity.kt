@@ -188,6 +188,15 @@ class MainActivity : HelperBaseComponentActivity() {
     }
 
     private fun handleFabAction() {
+        // A run in flight owns the button. It is the only thing the press can plausibly
+        // mean while the pipeline is working — starting a second run is refused by the
+        // service anyway, and connecting mid-run would fight the run for the tunnel. The
+        // cancel lived only on the Auto Mode row and in the notification, so the obvious
+        // place to press to stop a scan was the one place that ignored it.
+        if (mainViewModel.uiState.value.autoMode.running) {
+            mainViewModel.onAction(MainAction.ToggleAutoMode)
+            return
+        }
         if (mainViewModel.uiState.value.isRunning) {
             LauncherManager.stopService(this)
         } else if (SettingsManager.isVpnMode()) {
