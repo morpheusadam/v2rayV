@@ -136,6 +136,19 @@ data class AutoModeStore(
     var reserveCount: Int = 10,
 
     /**
+     * When the reserve was last rebuilt, as opposed to when a run last started.
+     *
+     * The two are not the same and only this one says anything about the servers. A run
+     * that fails still sets [lastRunMillis]; only a run that finishes replaces the reserve.
+     * Timing the reserve off the wrong one would let a string of failed runs keep the
+     * schedule quiet while the servers it is meant to be replacing went on dying.
+     *
+     * Zero means unknown — a fresh install, or a store written before this was recorded —
+     * and is read as "old enough to refresh", which is the safe answer either way.
+     */
+    var reserveBuiltMillis: Long = 0,
+
+    /**
      * Measured throughput per kept server, in MB/s, keyed by guid.
      *
      * The dashboard shows the speed of whichever server is selected, so this cannot be a

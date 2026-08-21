@@ -183,11 +183,23 @@ object AutoModeSourceManager {
     /**
      * Adds one URL as an ordinary source, for a catalog that turned out to hold servers
      * rather than links.
+     *
+     * A URL that is already known but was auto-disabled is put back rather than left alone.
+     * Every run calls this for the curated bundle, which is the one source the app cannot
+     * do without, and letting a dead streak that a blocked network caused keep it switched
+     * off would mean the app never asked for it again.
      */
     fun ensureSource(url: String): Boolean {
         val store = getStore()
         val normalized = normalizeUrl(url) ?: return false
-        if (store.sources.any { it.url == normalized }) {
+        val existing = store.sources.firstOrNull { it.url == normalized }
+        if (existing != null) {
+            if (!existing.enabled && existing.autoDisabled) {
+                existing.enabled = true
+                existing.autoDisabled = false
+                existing.deadStreak = 0
+                save()
+            }
             return false
         }
         store.sources.add(0, AutoModeSource(url = normalized))
@@ -340,8 +352,10 @@ object AutoModeSourceManager {
      * plus guaranteed slots for unexplored links and an occasional resurrection probe
      * for links that were auto-disabled after going dead.
      */
-    fun selectSources(): List<AutoModeSource> {
-        val store = getStore()
+    fun selectSources(): List<AutoModeSource> = selectSources(getStore())
+
+    /** The body of [selectSources], against a store that is handed in rather than loaded. */
+    fun selectSources(store: AutoModeStore): List<AutoModeSource> {
         val wanted = store.sourcesPerRun.coerceIn(3, 24)
 
         // Age out old evidence first, so a source that worked months ago is not still
@@ -372,7 +386,38 @@ object AutoModeSourceManager {
                 ?.let { picked.add(it) }
         }
 
+        // Nothing enabled at all is not the same failure as a few links going bad, and the
+        // occasional probe above is far too slow a way out of it. A source is disabled after
+        // five runs that produced nothing, and a network that blocks the list host produces
+        // nothing from *every* source at once — so a spell of heavy filtering, which is
+        // exactly when this app matters, can disable the whole list on evidence that was
+        // never about the sources. From there the app is done: the store only ever holds
+        // links it already knows, so no catalog refresh re-enables one, and one probe every
+        // fifth run is not a recovery.
+        //
+        // Treat it as what it almost always is — the network, not four hundred simultaneous
+        // deaths — and go back in at full width, oldest attempt first.
+        if (picked.isEmpty()) {
+            return store.sources
+                .filter { it.autoDisabled }
+                .sortedBy { it.lastTriedMillis }
+                .take(wanted)
+        }
+
         return picked
+    }
+
+    /**
+     * Record that a run reached this source but the network reached nothing at all.
+     *
+     * No penalty, deliberately. A run where not one byte of list data arrived — not the
+     * source, not the catalog, not through the proxy — has learned something about the
+     * connection and nothing whatsoever about the link. Charging it to the link is how a
+     * few hours of heavy filtering used to turn into a permanently empty source list.
+     */
+    fun noteNetworkDown(source: AutoModeSource) {
+        source.tried++
+        source.lastTriedMillis = System.currentTimeMillis()
     }
 
     /** Record what a source produced this run and let it decay, die or recover. */

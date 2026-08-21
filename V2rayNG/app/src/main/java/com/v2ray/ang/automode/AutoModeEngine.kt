@@ -219,6 +219,13 @@ class AutoModeEngine(
         var baselineMbps = AutoModeBaseline.UNKNOWN
         var acceptThreshold = 0.0
 
+        /**
+         * Whether one byte of list data came off the network this run. Read at the end to
+         * tell "these sources are dead" from "this connection reached nothing", which look
+         * identical from a single source's point of view and mean opposite things.
+         */
+        var reachedNetwork = false
+
         try {
             val store = AutoModeSourceManager.getStore()
             store.runCount++
@@ -252,20 +259,26 @@ class AutoModeEngine(
 
             // ---- top up the source list from the catalog ---------------------------
             beginStage(AutoModeStage.FETCHING)
-            refreshCatalog(store, proxy)
-            if (store.sources.none { it.enabled }) {
+            reachedNetwork = refreshCatalog(store, proxy)
+
+            // Asked before the list is checked for anything enabled, because "nothing is
+            // enabled" is a state the selector knows how to come back from and an early
+            // return here would have made its recovery path unreachable.
+            sources = AutoModeSourceManager.selectSources()
+            if (sources.isEmpty()) {
                 result.message = "No usable subscription sources could be reached."
                 report(result.message)
                 return@withContext result
             }
-
-            sources = AutoModeSourceManager.selectSources()
             result.sourcesUsed = sources.size
             report("Auto Mode: run #${store.runCount}, trying ${sources.size} of ${store.sources.size} sources.")
 
             // ---- fetch -------------------------------------------------------------
             fetched = fetchSources(sources, proxy)
             result.fetched = fetched.count { !it.value.failed }
+            if (result.fetched > 0) {
+                reachedNetwork = true
+            }
             if (result.fetched == 0) {
                 result.message = "No source could be downloaded. Check the connection."
                 report(result.message)
@@ -439,7 +452,10 @@ class AutoModeEngine(
             // Runs even when a stage bailed out, so the scratch groups never survive a
             // run and the source health always reflects what actually happened.
             try {
-                finishSources(sources, fetched, poolBySource, realPingTested, workingIds, winnerIds, bestSpeedBySource)
+                finishSources(
+                    sources, fetched, poolBySource, realPingTested,
+                    workingIds, winnerIds, bestSpeedBySource, reachedNetwork,
+                )
                 AutoModeSourceManager.save()
                 cleanupPools()
             } catch (e: Exception) {
@@ -496,8 +512,13 @@ class AutoModeEngine(
      *
      * It is still checked for servers, because "point this at a URL" is the obvious thing
      * to do with the setting and the file on the other end could be either.
+     *
+     * @return whether the catalog came off the network, as opposed to off the cache, out of
+     *         the APK, or not at all. It is the run's first and cheapest answer to "can this
+     *         connection reach anything", which is what decides later whether a failed
+     *         source fetch says anything about the source.
      */
-    private suspend fun refreshCatalog(store: AutoModeStore, proxy: AutoModeProxy?) =
+    private suspend fun refreshCatalog(store: AutoModeStore, proxy: AutoModeProxy?): Boolean =
         withContext(Dispatchers.IO) {
             // The bundle first, and unconditionally: it is one fetch to a host with a mirror
             // ladder, carrying a selection this device could not compute for itself. The
@@ -508,17 +529,19 @@ class AutoModeEngine(
 
             val url = store.subsUrl.ifBlank { AutoModeNetwork.DEFAULT_SUBS_URL }
 
-            val body = AutoModeNetwork.fetchText(url, proxy)
-                // Kept so a later run that cannot reach the network falls back on this
-                // rather than on whatever was compiled into the APK.
+            // Kept so a later run that cannot reach the network falls back on this rather
+            // than on whatever was compiled into the APK.
+            val live = AutoModeNetwork.fetchText(url, proxy)
                 ?.also { AutoModeNetwork.cacheSubs(context, it) }
+
+            val body = live
                 ?: AutoModeNetwork.bundledSubs(context)?.also {
                     report("Catalog unreachable — using the last copy this phone fetched.")
                 }
 
             if (body.isNullOrBlank()) {
                 report("Could not reach the subscription catalog.")
-                return@withContext
+                return@withContext false
             }
 
             val links = AutoModeSourceManager.parseUrls(body)
@@ -528,7 +551,7 @@ class AutoModeEngine(
                 if (AutoModeSourceManager.ensureSource(url)) {
                     report("Catalog holds servers rather than links — added as a source.")
                 }
-                return@withContext
+                return@withContext live != null
             }
 
             val added = AutoModeSourceManager.mergeCatalog(links)
@@ -536,6 +559,7 @@ class AutoModeEngine(
                 if (added > 0) "Catalog: $added new links, ${store.sources.size} sources known."
                 else "Catalog: ${store.sources.size} sources known."
             )
+            return@withContext live != null
         }
 
     private suspend fun fetchSources(
@@ -1079,6 +1103,9 @@ class AutoModeEngine(
         }
 
         if (replaceGroup) {
+            // Stamped here rather than at the top of the run: this is the moment the reserve
+            // becomes new, and it is what the background schedule times its next refresh off.
+            store.reserveBuiltMillis = System.currentTimeMillis()
             // Written in one go so the group is never observed half-replaced, then the
             // entries that lost their slot are dropped.
             MmkvManager.encodeServerList(keptGuids.toMutableList(), TOP_GROUP_ID)
@@ -1236,6 +1263,10 @@ class AutoModeEngine(
      * Attribute this run's outcomes back to the sources that produced them. Every
      * candidate still carries the scratch group it was imported into, so which link
      * produced which working server is exact rather than inferred.
+     *
+     * @param reachedNetwork whether anything at all was downloaded this run — the catalog
+     *        or any source. When it is false the run has no evidence about any link and
+     *        records the attempt without a verdict.
      */
     private fun finishSources(
         sources: List<AutoModeSource>,
@@ -1245,11 +1276,20 @@ class AutoModeEngine(
         workingIds: Set<String>,
         winnerIds: Set<String>,
         bestSpeedBySource: Map<String, Double>,
+        reachedNetwork: Boolean,
     ) {
         for (source in sources) {
             val fetch = fetched[source.url]
             if (fetch == null || fetch.failed) {
-                AutoModeSourceManager.applyResult(source, 0, 0, 0, true, null, 0, 0.0)
+                // A failed fetch is only evidence against the link when the connection was
+                // demonstrably able to reach something else. When nothing at all arrived this
+                // run, the link is not what failed, and marking it down five runs running is
+                // how a spell of filtering used to disable the entire source list for good.
+                if (reachedNetwork) {
+                    AutoModeSourceManager.applyResult(source, 0, 0, 0, true, null, 0, 0.0)
+                } else {
+                    AutoModeSourceManager.noteNetworkDown(source)
+                }
                 continue
             }
 

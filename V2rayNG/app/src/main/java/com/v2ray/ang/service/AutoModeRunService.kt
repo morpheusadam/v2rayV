@@ -116,8 +116,13 @@ class AutoModeRunService : Service() {
     /**
      * A refresh nobody asked for has to earn the right to run. It is declined when the
      * tunnel is up — a run starts a dozen throwaway cores and saturates the radio, which
-     * a user mid-stream would feel — and when the reserve is still healthy, because the
-     * point of the schedule is to keep the reserve stocked, not to keep it churning.
+     * a user mid-stream would feel — and when the reserve is neither short nor stale,
+     * because the point of the schedule is to keep the reserve stocked, not to keep it
+     * churning.
+     *
+     * The tunnel case is deferred rather than dropped: the core arms a catch-up as it shuts
+     * down, so a user who leaves the VPN on all day still gets a refresh at the first moment
+     * one is allowed. Without that, declining here meant declining forever.
      *
      * Both checks live here rather than in the worker because this is the core's process,
      * the only one where the core's state can be read without loading the native library
@@ -125,14 +130,14 @@ class AutoModeRunService : Service() {
      */
     private fun handleScheduledRefresh(startId: Int) {
         if (CoreServiceManager.isRunning()) {
-            LogUtil.i(AppConfig.TAG, "AutoMode: tunnel is up, skipping scheduled refresh")
+            LogUtil.i(AppConfig.TAG, "AutoMode: tunnel is up, deferring scheduled refresh")
             stopSelf(startId)
             return
         }
-        if (!AutoModeScheduler.isReserveLow()) {
+        if (!AutoModeScheduler.isRefreshDue()) {
             LogUtil.i(
                 AppConfig.TAG,
-                "AutoMode: reserve holds ${AutoModeScheduler.reserveSize()}, skipping scheduled refresh"
+                "AutoMode: reserve holds ${AutoModeScheduler.reserveSize()} and is current, skipping scheduled refresh"
             )
             stopSelf(startId)
             return

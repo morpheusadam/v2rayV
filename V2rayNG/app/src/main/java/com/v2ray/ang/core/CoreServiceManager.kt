@@ -13,6 +13,7 @@ import androidx.core.content.ContextCompat
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
 import com.v2ray.ang.automode.AutoModeHandover
+import com.v2ray.ang.automode.AutoModeScheduler
 import com.v2ray.ang.contracts.IDialerService
 import com.v2ray.ang.contracts.ServiceControl
 import com.v2ray.ang.dto.OutboundTrafficStat
@@ -209,6 +210,13 @@ object CoreServiceManager {
 
         MessageHelper.sendMsg2UI(service, AppConfig.MSG_STATE_STOP_SUCCESS, "")
         NotificationManager.cancelNotification()
+
+        // The one moment an Auto Mode run is allowed again. A scheduled refresh is always
+        // declined while the tunnel is up, so for anyone who switches the VPN on and leaves
+        // it on — which is most of the people this app is for — this is the only thing that
+        // ever renews the reserve. It asks for a run a few minutes from now, and only if one
+        // is actually owed, so a restart simply declines it.
+        AutoModeScheduler.refreshAfterTunnelStops(service)
 
         try {
             service.unregisterReceiver(mMsgReceive)
