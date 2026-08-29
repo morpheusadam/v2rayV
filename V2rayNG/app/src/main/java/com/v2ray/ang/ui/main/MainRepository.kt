@@ -8,6 +8,7 @@ import androidx.core.content.ContextCompat
 import com.v2ray.ang.AngApplication
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
+import com.v2ray.ang.automode.AutoModePulse
 import com.v2ray.ang.automode.AutoModeReserve
 import com.v2ray.ang.automode.AutoModeScheduler
 import com.v2ray.ang.automode.AutoModeSourceManager
@@ -309,6 +310,29 @@ class MainRepository(
 
     override fun scheduleAutoModeRefresh() {
         AutoModeScheduler.schedule(app)
+        AutoModeScheduler.schedulePulse(app)
+
+        // Opening the app is the one moment a pulse is both free and useful: free because
+        // the app is in the foreground, so starting the service that owns the cores is
+        // allowed outright and no exemption is needed; useful because the next thing the
+        // user does is press the power button, and this is what decides whether the reserve
+        // behind it is real. It costs a few kilobytes and finishes long before they choose.
+        //
+        // Rate-limited on its own timestamp rather than on the app's lifecycle: opening the
+        // app four times in an hour is one pulse, not four.
+        try {
+            val store = AutoModeSourceManager.reload()
+            if (AutoModePulse.isPulseDue(store)) {
+                MessageHelper.sendMsg2AutoModeService(
+                    app,
+                    AutoModeMessage(AppConfig.MSG_AUTOMODE_PULSE)
+                )
+            }
+        } catch (e: Exception) {
+            // Opening the app must not fail because a maintenance check could not be
+            // asked for. The periodic pulse will get there on its own.
+            LogUtil.w(AppConfig.TAG, "AutoMode: could not ask for a pulse on open: ${e.message}")
+        }
     }
 
     override fun openUri(url: String) {

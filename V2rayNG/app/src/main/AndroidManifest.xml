@@ -410,6 +410,17 @@
             android:exported="false"
             android:process=":bg" />
 
+        <!--
+            Runs Auto Mode's own background work in the core's process. The reserve pulse
+            starts throwaway cores, so it needs libv2ray, which is only loaded here — and
+            reaching this process by starting a service is exactly what a background job is
+            not allowed to do. See AutoModeRemoteWorkerService.
+        -->
+        <service
+            android:name=".service.AutoModeRemoteWorkerService"
+            android:exported="false"
+            android:process=":RunSoLibV2RayDaemon" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.cache"

@@ -87,6 +87,8 @@ object AutoModeSourceManager {
                     if (store.speedByGuid == null) store.speedByGuid = mutableMapOf()
                     @Suppress("SENSELESS_COMPARISON")
                     if (store.countryByGuid == null) store.countryByGuid = mutableMapOf()
+                    @Suppress("SENSELESS_COMPARISON")
+                    if (store.aliveByGuid == null) store.aliveByGuid = mutableMapOf()
 
                     // A store written before "IR" meant the mode can still carry it as an
                     // ordinary filter value, where it would prefer Iran and then quietly top
@@ -112,6 +114,51 @@ object AutoModeSourceManager {
                 storage.encode(KEY_STORE, JsonUtil.toJson(store))
             } catch (e: Exception) {
                 LogUtil.e(AppConfig.TAG, "AutoMode: failed to save source store", e)
+            }
+        }
+    }
+
+    /**
+     * Records what the reserve pulse measured, without disturbing anything else.
+     *
+     * 🔴 The pulse must not do this itself with reload/mutate/save.
+     *
+     * `reload()` replaces the process-wide cache with a fresh object read off disk. A run
+     * holds its own reference to the *old* object for minutes and keeps writing Beta
+     * evidence into it, and then calls `save()` — which writes whatever is cached now. So a
+     * pulse that reloaded mid-run would either throw away everything the run had learned,
+     * or have its own writes thrown away, depending only on which of the two saved last.
+     *
+     * The pulse also runs in the core's process from a WorkManager job that does not go
+     * through `AutoModeRunService`, so it cannot see that service's private engine field —
+     * the overlap is real, not theoretical. [AutoModeEngine.isRunInFlight] is the guard that
+     * usually prevents it; this method is what makes the write safe when the guard is
+     * raced anyway.
+     *
+     * So the whole update happens here, under the same lock as every other write, against
+     * whatever store object is current — never a replacement for it.
+     *
+     * @param alive guids seen to answer, mapped to when.
+     * @param dead guids that did not answer and should lose any entry they had.
+     * @param present every guid the reserve currently holds; anything else is pruned.
+     * @param checkedAt when the pulse ran.
+     */
+    fun recordLiveness(
+        alive: Map<String, Long>,
+        dead: Collection<String>,
+        present: Set<String>,
+        checkedAt: Long,
+    ) {
+        synchronized(lock) {
+            val store = cached ?: load().also { cached = it }
+            store.aliveByGuid.putAll(alive)
+            dead.forEach { store.aliveByGuid.remove(it) }
+            store.aliveByGuid.keys.retainAll(present)
+            store.reserveCheckedMillis = checkedAt
+            try {
+                storage.encode(KEY_STORE, JsonUtil.toJson(store))
+            } catch (e: Exception) {
+                LogUtil.e(AppConfig.TAG, "AutoMode: failed to save reserve liveness", e)
             }
         }
     }

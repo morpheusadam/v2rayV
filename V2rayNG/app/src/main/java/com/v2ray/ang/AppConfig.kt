@@ -214,6 +214,16 @@ object AppConfig {
      */
     const val MSG_AUTOMODE_REFRESH = 96
 
+    /**
+     * Check whether the servers already kept still answer, without running the pipeline.
+     *
+     * Distinct from [MSG_AUTOMODE_REFRESH] because the two cost different orders of
+     * magnitude and are allowed in different circumstances: a refresh is minutes and
+     * hundreds of megabytes and is declined while the tunnel is up, a pulse is kilobytes
+     * and is not.
+     */
+    const val MSG_AUTOMODE_PULSE = 100
+
     /** Live throughput while a run measures something, so the dashboard meters move. */
     const val MSG_AUTOMODE_SPEED = 97
 

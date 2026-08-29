@@ -9,6 +9,7 @@ import androidx.core.app.NotificationCompat
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
 import com.v2ray.ang.automode.AutoModeEngine
+import com.v2ray.ang.automode.AutoModePulse
 import com.v2ray.ang.automode.AutoModeScheduler
 import com.v2ray.ang.automode.AutoModeStage
 import com.v2ray.ang.core.CoreNativeManager
@@ -107,6 +108,7 @@ class AutoModeRunService : Service() {
         when (message.key) {
             AppConfig.MSG_AUTOMODE_START -> handleStart()
             AppConfig.MSG_AUTOMODE_REFRESH -> handleScheduledRefresh(startId)
+            AppConfig.MSG_AUTOMODE_PULSE -> handlePulse(startId)
             AppConfig.MSG_AUTOMODE_CANCEL -> handleCancel()
             else -> stopSelf(startId)
         }
@@ -129,6 +131,15 @@ class AutoModeRunService : Service() {
      * into the UI.
      */
     private fun handleScheduledRefresh(startId: Int) {
+        // Before anything that reads the store. isRefreshDue() calls reload(), which
+        // replaces the process-wide cached store with a fresh object off disk — and a run
+        // in flight is holding a reference to the old one, writing its source health into
+        // it for minutes before saving. Reloading underneath it means the run saves the
+        // replacement instead and everything it learned is dropped, silently.
+        if (AutoModeEngine.isRunInFlight()) {
+            LogUtil.i(AppConfig.TAG, "AutoMode: a run is already in flight, skipping the scheduled refresh")
+            return
+        }
         if (CoreServiceManager.isRunning()) {
             LogUtil.i(AppConfig.TAG, "AutoMode: tunnel is up, deferring scheduled refresh")
             stopSelf(startId)
@@ -143,6 +154,60 @@ class AutoModeRunService : Service() {
             return
         }
         handleStart()
+    }
+
+    /**
+     * Checks whether the kept servers still answer. Cheap, and quiet.
+     *
+     * Three things make this different from the scheduled refresh above:
+     *
+     * It runs **with the tunnel up**. That is not an oversight — it is most of the value.
+     * The refresh declines while the tunnel is running and relies on the catch-up armed
+     * when it stops, which means a user with always-on VPN never got any background
+     * maintenance at all. The app excludes itself from its own VPN, so the throwaway cores
+     * a ping starts go over the real network regardless.
+     *
+     * It **posts no foreground notification**. The run's notification exists so that a
+     * minutes-long, hundreds-of-megabytes job is visible and cancellable. A few seconds of
+     * kilobytes is not something to wake a user at 3 a.m. to tell them about.
+     *
+     * It **defers to a run in progress** rather than the other way round. A pulse and a run
+     * both start throwaway cores in this process; the run is the one somebody is waiting
+     * for, and the pulse loses nothing by being skipped — the run is about to replace the
+     * reserve it would have measured.
+     */
+    private fun handlePulse(startId: Int) {
+        if (engine != null || AutoModeEngine.isRunInFlight()) {
+            // 🔴 Deliberately NOT stopSelf(startId).
+            //
+            // `stopSelf(int)` stops the service whenever the id it is given is the most
+            // recent one delivered — and a pulse arriving during a run IS the most recent
+            // one. So the guard that exists to protect the run was destroying it:
+            // onDestroy calls engine?.stop() and cancels the service scope, so a run three
+            // minutes and a couple of hundred megabytes in was thrown away, and the user
+            // was shown a failure.
+            //
+            // Worse, the pulse is asked for on every app open, which made "open the app
+            // while a background refresh happens to be running" — an ordinary thing to do —
+            // the way to kill it.
+            //
+            // Returning leaves the run owning the service, which is right: it will call
+            // stopSelf() itself when it finishes.
+            LogUtil.i(AppConfig.TAG, "AutoMode: a run is in flight, skipping the pulse")
+            return
+        }
+        serviceScope.launch {
+            try {
+                AutoModePulse.run(this@AutoModeRunService)
+            } catch (e: Exception) {
+                // Nothing downstream depends on a pulse having happened: an absent result
+                // reads as "not known to be alive", which is the same conclusion a failed
+                // one would reach.
+                LogUtil.w(AppConfig.TAG, "AutoMode: pulse failed: ${e.message}")
+            } finally {
+                stopSelf(startId)
+            }
+        }
     }
 
     private fun handleStart() {
