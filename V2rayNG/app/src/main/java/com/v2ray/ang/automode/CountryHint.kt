@@ -48,9 +48,54 @@ object CountryHint {
 
     private val knownCodes: Set<String> = namesToCode.values.toSet()
 
-    // Digits count as part of the surrounding word: "500GB monthly" is a traffic quota,
-    // not a server in Great Britain.
     private val isoTokenRegex = Regex("(?<![A-Za-z0-9])([A-Z]{2})(?![A-Za-z0-9])")
+
+    /**
+     * A data allowance, so it can be taken out of the string before codes are looked for.
+     *
+     * 🔴 The token regex above used to be the only guard, on the reasoning that "digits
+     * count as part of the surrounding word, so 500GB is a quota and not Great Britain".
+     * That is true only while the digit actually touches the letters. Free lists write the
+     * allowance with a space at least as often as without — `premium | 50 GB | 30 days` —
+     * and there the lookbehind sees a space, the lookahead sees a space, and `GB` is
+     * returned as a country with full confidence.
+     *
+     * It is the worst possible pair to get wrong: `GB` is simultaneously the commonest unit
+     * on these lists and a real country code, so the mistake is silent and frequent. It
+     * also fires *before* any code later in the same remark, because the scan runs
+     * left to right, so `50 GB | IR` reads as Great Britain and the `IR` is never seen.
+     *
+     * In Iran mode that is not a cosmetic mislabel. `IranMode.labelledElsewhere` deletes
+     * anything whose label points outside Iran, before it is ever tested — so a remark
+     * quoting its quota in gigabytes was enough to remove a genuinely Iranian server from
+     * the run.
+     */
+    /**
+     * Separators that turn up between a number and its unit on these lists. `\s` alone is
+     * not enough: the non-breaking space survives copy-paste from a channel post, and
+     * hyphens, underscores and dots are all used as decoration.
+     */
+    private const val SEP = """[\s   ._\-–—/]*"""
+
+    private val quotaRegex = Regex("""\d+(?:[.,]\d+)?$SEP[KMGT]B(?![A-Za-z])""", RegexOption.IGNORE_CASE)
+
+    /**
+     * A unit standing next to a word about data rather than next to a number — "unlimited
+     * GB", "traffic GB". No figure to anchor on, so [quotaRegex] cannot see it.
+     */
+    private val unitWordRegex = Regex(
+        """(?:unlimited|unlimit|traffic|data|quota|volume|vol|bandwidth|monthly)$SEP[KMGT]B(?![A-Za-z])""",
+        RegexOption.IGNORE_CASE,
+    )
+
+    /**
+     * The one two-letter token that is a unit as often as it is a country.
+     *
+     * `TB`, `MB` and `KB` are not ISO country codes, so they never reach the token scan.
+     * `GB` is both Great Britain and the unit almost every free list quotes its allowance
+     * in, which is why it needs a rule of its own rather than a wider regex.
+     */
+    private const val AMBIGUOUS_UNIT = "GB"
 
     private val ipInfoRegex = Regex("\\(([A-Za-z]{2})\\)")
 
@@ -74,14 +119,29 @@ object CountryHint {
         // A bare two-letter token, but only when it is a code we recognise — plenty of
         // remarks contain things like "GB" meaning gigabytes or "TV", and treating any
         // pair of capitals as a country produces confident nonsense.
-        for (m in isoTokenRegex.findAll(remark)) {
-            val token = m.groupValues[1].uppercase()
-            if (knownCodes.contains(token)) {
-                return token
-            }
-        }
+        //
+        // Allowances are removed rather than skipped over, so that a code standing later in
+        // the same remark is still found: the scan used to return the first token it
+        // recognised, and "50 GB | IR" has to answer IR.
+        val stripped = unitWordRegex.replace(quotaRegex.replace(remark, " "), " ")
+        val tokens = isoTokenRegex.findAll(stripped)
+            .map { it.groupValues[1].uppercase() }
+            .filter { knownCodes.contains(it) }
+            .toList()
 
-        return null
+        // 🔴 GB loses to any other country in the same remark.
+        //
+        // Stripping the allowance only works when there is a number to strip. The forms
+        // that have none — "unlimited GB", "traffic GB", "GB 500" with the unit leading —
+        // still leave a bare GB standing, and being first in the string it won outright.
+        // On a list where the allowance is quoted in gigabytes and the location is given
+        // as a code, that is every single entry.
+        //
+        // Two codes in one remark is otherwise rare, so preferring the other one costs
+        // almost nothing and removes the whole class. A remark whose only code is GB still
+        // reads as Great Britain, which is the case the rule must not break.
+        tokens.firstOrNull { it != AMBIGUOUS_UNIT }?.let { return it }
+        return tokens.firstOrNull()
     }
 
     private fun fromFlagEmoji(text: String): String? {

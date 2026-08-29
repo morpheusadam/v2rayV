@@ -238,6 +238,94 @@ object IranMode {
     // ---- routing ----------------------------------------------------------------
 
     /**
+     * Where a candidate is asked to prove it can carry a request, while this mode is on.
+     *
+     * 🔴 THIS IS THE FIX FOR "IRAN MODE NEVER CONNECTS". Read it before changing it back.
+     *
+     * Every gate in the pipeline was measured against a *foreign* host — the liveness test
+     * against `gstatic.com/generate_204`, throughput against `speed.cloudflare.com`, the
+     * exit-country lookup against `api.ip.sb`. That is the right choice for the mode this
+     * app was originally built for, where the exit is abroad and the question is whether
+     * the user can get out.
+     *
+     * In this mode the exit is *inside* Iran, and those three requests therefore leave the
+     * country over the one link that is throttled and filtered by design. A genuinely
+     * Iranian server — the exact thing the mode exists to find — answers them slowly or not
+     * at all. `realPingStage` then drops it for exceeding the ceiling, before it is ever
+     * speed tested, and the run ends with the honest-sounding report that nothing came out
+     * inside Iran. Nothing was wrong with the servers; the question was.
+     *
+     * It is also the wrong question on its own terms. Nobody turns this mode on to reach
+     * Google. They turn it on to reach an Iranian bank, and "can this server reach an
+     * Iranian site" is both what they need to know and a request that stays inside Iran.
+     *
+     * On the choice of host: it must be reachable *from inside Iran*, which is what rules
+     * out the foreign ones, and it must be answered *in* Iran, which is what rules out most
+     * of the obvious Iranian names. Aparat, Snapp and Varzesh3 all sit behind ArvanCloud's
+     * anycast, whose network has forty-odd points of presence outside the country — a
+     * request to them from a German server is answered in Bucharest, quickly, and would
+     * pass this test while proving the opposite of what it looks like. Digikala answers
+     * from its own AS43211 rather than from a CDN reseller's edge, which is why it is here.
+     *
+     * It is still one hardcoded name in a shipped binary, and it will rot. [probeUrl] reads
+     * the user's own override first for exactly that reason, so a broken default can be
+     * worked around without an app update.
+     */
+    const val PROBE_URL = "https://www.digikala.com/"
+
+    /**
+     * The liveness ceiling while this mode is on.
+     *
+     * The pipeline's usual 2500 ms is a bar for a foreign server carrying a user out of a
+     * censored network. Here the traffic goes the other way, into a country whose domestic
+     * routing from abroad is slower and far more variable, and a server that answers in
+     * three seconds is not a failure — it is a normal Iranian server, and rejecting it
+     * leaves the user with nothing. The bar still exists, because a link that takes eight
+     * seconds to answer will not carry a bank session either.
+     */
+    const val MAX_DELAY_MILLIS = 6000L
+
+    /**
+     * Whether the mode is on, asked safely.
+     *
+     * Behind a catch because the callers are in the core's process, mid-connection, and a
+     * storage problem there must degrade to the ordinary behaviour rather than take the
+     * connection down. Answering "off" is the safe direction: it restores the foreign
+     * probe, which is wrong for this mode but harmless for everyone else.
+     */
+    fun enabled(): Boolean = try {
+        AutoModeSourceManager.getStore().iranMode
+    } catch (e: Exception) {
+        LogUtil.e(AppConfig.TAG, "AutoMode: could not read Iran mode", e)
+        false
+    }
+
+    /**
+     * [PROBE_URL], unless the user has set a delay-test URL of their own.
+     *
+     * The override wins because someone who has typed a URL into settings has said
+     * something more specific than this default can know, and because it is the escape
+     * hatch if the default ever stops answering.
+     */
+    fun probeUrl(): String {
+        val configured = MmkvManager.decodeSettingsString(AppConfig.PREF_DELAY_TEST_URL)?.trim()
+
+        // 🔴 "The pref has a value" is NOT "the user chose a value".
+        //
+        // SettingsManager.ensureDefaultSettings() runs on every app start and seeds this
+        // key with AppConfig.DELAY_TEST_URL, so it is never null and never blank. A plain
+        // null/blank check therefore always found a "user override" and this function
+        // always returned gstatic — which made the whole Iranian probe unreachable code
+        // and this mode's fix a no-op that still looked right in review.
+        //
+        // Only a value that differs from the shipped default can have come from a person.
+        if (!configured.isNullOrBlank() && configured != AppConfig.DELAY_TEST_URL) {
+            return configured
+        }
+        return PROBE_URL
+    }
+
+    /**
      * Whether the server about to be started is one that Iranian traffic should be sent
      * *through* rather than around.
      *

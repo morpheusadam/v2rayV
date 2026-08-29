@@ -382,6 +382,22 @@ object SettingsManager {
      * @return The delay test URL.
      */
     fun getDelayTestUrl(second: Boolean = false): String {
+        // 🔴 Iran mode does NOT belong here, and it was here.
+        //
+        // This is the app-wide delay-test URL. Branching on Iran mode in it changed every
+        // probe in the app at once — the user's own "test all real ping" over their whole
+        // server list, the connection test on the server they are actually using, and the
+        // automatic test after a subscription update. None of those are about Auto Mode.
+        // Someone can have Iran mode on for Auto Mode and be connected to a German server
+        // by hand; measuring that server by asking it to fetch an Iranian site, which many
+        // Iranian sites geo-block outright, reports a healthy server as broken.
+        //
+        // It also silently killed the fallback: this function returns a second, different
+        // host when `second` is true precisely so a retry learns something new, and the
+        // Iran branch sat above that test and returned the same URL for both.
+        //
+        // The probe belongs to the pipeline that has an opinion about it, so Auto Mode
+        // passes it explicitly — see AutoModeEngine and AutoModePulse.
         return if (second) {
             AppConfig.DELAY_TEST_URL2
         } else {

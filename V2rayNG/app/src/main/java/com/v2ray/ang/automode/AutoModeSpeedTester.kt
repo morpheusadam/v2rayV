@@ -133,11 +133,25 @@ object AutoModeSpeedTester {
             // Shared with the baseline measurement on purpose — the two numbers are
             // divided by one another, so they have to be the same measurement.
             measurement.speedMbps = ThroughputProbe.measure(proxy, onSample)
+            measurement.carriedRequest = measurement.speedMbps > 0
             onThroughput(measurement)
 
-            // Only worth a round trip when the tunnel proved it carries traffic.
             if (measurement.speedMbps > 0) {
+                // Only worth a round trip when the tunnel proved it carries traffic.
                 measurement.exitCountry = CountryHint.fromIpInfo(lookupIpInfo(proxy))
+            } else if (IranMode.enabled()) {
+                // Zero throughput is not the same answer here as everywhere else. The
+                // probe downloads from speed.cloudflare.com, which from a server inside
+                // Iran means leaving the country over the one link that is throttled and
+                // filtered — so a server that carries Iranian traffic perfectly well can
+                // measure nothing at all.
+                //
+                // That is why Iran mode stopped gating on throughput. But something still
+                // has to prove the server is alive, or the mode will happily publish one
+                // that died overnight on the strength of its IP address alone. So the
+                // question is asked again, of a host inside Iran, which is both reachable
+                // from there and the thing the user actually wants to reach.
+                measurement.carriedRequest = reachesThrough(proxy, IranMode.probeUrl())
             }
         } catch (e: Exception) {
             LogUtil.e(AppConfig.TAG, "AutoMode: speed test failed for ${warm.guid}", e)
@@ -201,6 +215,32 @@ object AutoModeSpeedTester {
      * only country evidence worth ranking on — a remark saying "Netherlands" is a claim,
      * this is a measurement.
      */
+    /**
+     * Whether a plain request through this proxy comes back.
+     *
+     * Proof of life, nothing more — the body is not read and the status is not inspected
+     * beyond being a response at all, because any answer means the tunnel carried a request
+     * end to end. Uses the same short timeout as the country lookup: a server that cannot
+     * answer in that window is not one to hand a bank session to.
+     */
+    private fun reachesThrough(proxy: Proxy, url: String): Boolean {
+        val client = OkHttpClient.Builder()
+            .proxy(proxy)
+            .connectTimeout(IP_INFO_TIMEOUT_MILLIS.toLong(), TimeUnit.MILLISECONDS)
+            .readTimeout(IP_INFO_TIMEOUT_MILLIS.toLong(), TimeUnit.MILLISECONDS)
+            .callTimeout(IP_INFO_TIMEOUT_MILLIS.toLong() * 2, TimeUnit.MILLISECONDS)
+            .build()
+
+        return try {
+            client.newCall(
+                Request.Builder().url(url).head().header("Connection", "close").build()
+            ).execute().use { true }
+        } catch (e: Exception) {
+            LogUtil.i(AppConfig.TAG, "AutoMode: no answer through ${proxy.address()} — ${e.message}")
+            false
+        }
+    }
+
     private fun lookupIpInfo(proxy: Proxy): String? {
         val url = MmkvManager.decodeSettingsString(AppConfig.PREF_IP_API_URL)
             ?.takeIf { it.isNotBlank() } ?: AppConfig.IP_API_URL

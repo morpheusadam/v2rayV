@@ -29,10 +29,30 @@ class RealPingWorkerService(
     private val context: Context,
     private val guids: List<String>,
     private val onlyTcp: Boolean = false,
+    /**
+     * How many cores to hold open at once, or null for the user's configured value.
+     *
+     * A run is a race against the user's patience and spends the default sixteen. Anything
+     * unattended — the reserve pulse — passes a smaller number instead: nobody is waiting
+     * for it, and sixteen cores opened at once on a phone that woke up for something else
+     * is how an app earns a battery complaint.
+     */
+    private val concurrencyOverride: Int? = null,
+    /**
+     * Where to send the probe, or null for the app-wide delay-test URL.
+     *
+     * Auto Mode's Iran mode measures servers that come out *inside* Iran, where a probe
+     * aimed at Google leaves the country over the throttled link and times out on exactly
+     * the servers that mode exists to find. That opinion belongs to the pipeline that holds
+     * it and not to the app-wide setting — the user's own "test all" is about the servers
+     * they picked, not about Auto Mode, and must keep asking the question it always asked.
+     */
+    private val delayTestUrl: String? = null,
     private val onEvent: (RealPingEvent) -> Unit = {}
 ) {
     private val job = SupervisorJob()
-    private val concurrency = SettingsManager.getRealPingConcurrency()
+    private val concurrency = concurrencyOverride?.coerceIn(1, 128)
+        ?: SettingsManager.getRealPingConcurrency()
     private val dispatcher = Executors.newFixedThreadPool(if (onlyTcp) concurrency * 2 else concurrency).asCoroutineDispatcher()
     private val scope = CoroutineScope(job + dispatcher + CoroutineName("RealPingBatchWorker"))
 
@@ -110,7 +130,10 @@ class RealPingWorkerService(
         if (!configResult.status) {
             return retFailure
         }
-        return CoreNativeManager.measureOutboundDelay(configResult.content, SettingsManager.getDelayTestUrl())
+        return CoreNativeManager.measureOutboundDelay(
+            configResult.content,
+            delayTestUrl ?: SettingsManager.getDelayTestUrl(),
+        )
     }
 
     private fun startTcping(guid: String): Long {

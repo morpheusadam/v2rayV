@@ -95,6 +95,51 @@ class AutoModeEngine(
 ) {
 
     companion object {
+        /**
+         * Whether a run is in flight anywhere in this process.
+         *
+         * 🔴 `AutoModeRunService` knows this too — it holds the engine — but it knows it in
+         * a private field, and the reserve pulse does not go through that service. The
+         * pulse's WorkManager job binds straight into this process, so without a flag both
+         * can be live at once, and both mutate the same cached `AutoModeStore`: the run
+         * holds a reference to it for minutes while a pulse writes and saves. Whichever
+         * saves last wins, and a run's Beta evidence and reserve timestamp are the loser.
+         *
+         * They also both start throwaway cores. A pulse's pings are kilobytes, but they
+         * share the radio with a speed test that the whole acceptance ratio depends on
+         * having measured cleanly — see 07-decisions.md, "exactly one speed test at a
+         * time".
+         *
+         * A run never waits for a pulse: the pulse is seconds and nobody is waiting for it,
+         * so it is the one that defers.
+         */
+        private val runInFlight = AtomicBoolean(false)
+
+        /** Whether a run is happening right now, for anything that must not overlap one. */
+        fun isRunInFlight(): Boolean = runInFlight.get()
+
+        /**
+         * Whether a pulse is measuring the reserve right now.
+         *
+         * Held by the same flag as a run, so the two are mutually exclusive rather than
+         * merely polite about each other. A pulse checking `isRunInFlight` and then working
+         * for several seconds is a check-then-act: a run starting a moment later would
+         * reach its speed test with the pulse's cores still open, and that stage divides
+         * against a single-stream baseline, so extra traffic on the radio depresses the
+         * measurement and biases acceptance toward rejecting good servers.
+         *
+         * A run does not call this. It is the thing being protected, it is what the user is
+         * waiting for, and it sets the flag unconditionally — a pulse that is already
+         * running finishes in seconds and writes only liveness, which the run is about to
+         * overwrite anyway.
+         */
+        fun tryClaimForPulse(): Boolean = runInFlight.compareAndSet(false, true)
+
+        /** Releases what [tryClaimForPulse] took. */
+        fun releasePulseClaim() {
+            runInFlight.set(false)
+        }
+
         /** Group holding the surviving best servers. Fixed id so runs find it again. */
         const val TOP_GROUP_ID = "automode-top"
 
@@ -137,6 +182,18 @@ class AutoModeEngine(
 
         /** Beyond this a server is unusable however fast it downloads. */
         private const val MAX_ACCEPTABLE_DELAY = 2500L
+
+        /**
+         * The liveness ceiling for this run.
+         *
+         * Iran mode probes a host inside Iran rather than Google, over a route into the
+         * country rather than out of it, and both of those are slower and more variable
+         * than the path this constant was chosen for. Applying 2500 ms there rejected
+         * ordinary Iranian servers before they were ever speed tested, which is how a mode
+         * with working servers available reported that it had found none.
+         */
+        private fun maxDelay(iranMode: Boolean): Long =
+            if (iranMode) IranMode.MAX_DELAY_MILLIS else MAX_ACCEPTABLE_DELAY
 
         /** Rough seconds one speed test costs, for the countdown. */
         private const val SPEED_TEST_SECONDS = 8.0
@@ -226,6 +283,7 @@ class AutoModeEngine(
          */
         var reachedNetwork = false
 
+        runInFlight.set(true)
         try {
             val store = AutoModeSourceManager.getStore()
             store.runCount++
@@ -437,6 +495,11 @@ class AutoModeEngine(
             report(result.message)
             return@withContext result
         } finally {
+            // Cleared first, and outside every other cleanup, because everything below can
+            // throw and a flag left set would silence the reserve pulse for the lifetime of
+            // the process.
+            runInFlight.set(false)
+
             // A run that bailed out early leaves the baseline probe with nothing left to
             // be measured for, and it holds a socket for six seconds if left alone.
             pendingBaseline?.cancel()
@@ -765,7 +828,7 @@ class AutoModeEngine(
             // worker's threads and the map it would otherwise size is still being filled.
             val survivors = java.util.concurrent.atomic.AtomicInteger(working.size)
             val delays = runPingBatch(batch.map { it.guid }, onlyTcp = false) { _, delayMillis ->
-                val enough = delayMillis in 1..MAX_ACCEPTABLE_DELAY
+                val enough = delayMillis in 1..maxDelay(iranMode)
                     && survivors.incrementAndGet() >= target
                 !enough && !isStopped()
             }
@@ -776,7 +839,7 @@ class AutoModeEngine(
             tested += delays.size
             delays.keys.forEach { testedIds.add(it) }
 
-            working.addAll(batch.filter { (delays[it.guid] ?: -1L) in 1..MAX_ACCEPTABLE_DELAY })
+            working.addAll(batch.filter { (delays[it.guid] ?: -1L) in 1..maxDelay(iranMode) })
 
             report("  tunnel test $tested/${min(live.size, MAX_REAL_PING)} — ${working.size} working so far.")
 
@@ -952,13 +1015,43 @@ class AutoModeEngine(
         measurement: AutoModeMeasurement,
         acceptThreshold: Double,
         iranMode: Boolean = false,
-    ): Boolean =
-        measurement.speedMbps > 0
-            && measurement.delayMillis in 1..MAX_ACCEPTABLE_DELAY
-            && measurement.speedMbps >= acceptThreshold
-            // In Iran mode a fast server that comes out anywhere else is not a lesser
-            // result, it is the wrong one, and connecting to it would look like success.
-            && (!iranMode || IranMode.isIranianExit(measurement))
+    ): Boolean {
+        if (measurement.delayMillis !in 1..maxDelay(iranMode)) {
+            return false
+        }
+
+        if (iranMode) {
+            // 🔴 Throughput is a ranking signal here, not a gate.
+            //
+            // ThroughputProbe downloads from speed.cloudflare.com. Through a server that
+            // comes out inside Iran that download leaves the country, and on a link that is
+            // throttled or filtered it can legitimately measure zero for a server that is
+            // working perfectly well for what the user actually wants — reaching an Iranian
+            // bank, which never leaves Iran at all. Requiring a nonzero figure meant the
+            // state of Iran's international transit decided whether an Iranian server was
+            // allowed to carry Iranian traffic, which is not a question it has any business
+            // answering.
+            //
+            // But something still has to prove the server is alive. Dropping the throughput
+            // gate without replacing it left acceptance resting on delayMillis — which for
+            // a champion is whatever MMKV kept from a previous run — and on an address
+            // block, which a server that died overnight still sits in. carriedRequest is
+            // the replacement: bytes moved, or a request came back through this proxy just
+            // now. See AutoModeMeasurement.carriedRequest.
+            if (!measurement.carriedRequest || !IranMode.isIranianExit(measurement)) {
+                return false
+            }
+            // A figure, when there is one, still has to clear the bar — which in this mode
+            // IranMode.ACCEPT_FRACTION has already lowered to a tenth of the line, because
+            // Iran's international link is the limit rather than the server. Dropping the
+            // test outright rather than dropping the *requirement for a figure* would have
+            // made that constant, and the baseline measurement feeding it, dead code that
+            // two files still described as live.
+            return measurement.speedMbps <= 0.0 || measurement.speedMbps >= acceptThreshold
+        }
+
+        return measurement.speedMbps > 0 && measurement.speedMbps >= acceptThreshold
+    }
 
     /**
      * Puts one server into the top group so it can be connected to right away.
@@ -1008,7 +1101,13 @@ class AutoModeEngine(
 
     fun selectWinners(measured: List<AutoModeMeasurement>, store: AutoModeStore): List<AutoModeMeasurement> {
         val scored = measured
-            .filter { it.speedMbps > 0 && it.delayMillis in 1..MAX_ACCEPTABLE_DELAY }
+            // Iran mode keeps a server that carried a request but measured no throughput;
+            // see isAcceptable for why zero there is a statement about Iran's international
+            // link and not about the server. It still has to have carried one.
+            .filter {
+                (if (store.iranMode) it.carriedRequest else it.speedMbps > 0)
+                    && it.delayMillis in 1..maxDelay(store.iranMode)
+            }
             // Throughput still decides, but in half-megabyte buckets, so that servers which
             // measured within noise of each other are separated by country and protocol
             // rather than by which one happened to catch a better second.
@@ -1114,6 +1213,14 @@ class AutoModeEngine(
             // be read back for a guid that no longer names anything.
             speeds.keys.retainAll(keptGuids.toSet())
             countries.keys.retainAll(keptGuids.toSet())
+            // Liveness is pruned with the rest, and for a sharper reason than the other
+            // two: a stale entry here is not merely wasted space, it is a dead server
+            // counted as alive by the very test that decides whether a refresh is needed.
+            store.aliveByGuid.keys.retainAll(keptGuids.toSet())
+            // A reserve that has just been rebuilt has not been pulsed. Saying otherwise
+            // would let the servers this run happened to keep inherit the last pulse's
+            // verdict, which was about the servers it replaced.
+            store.reserveCheckedMillis = 0
         } else {
             val merged = (keptGuids + existing).distinct().toMutableList()
             MmkvManager.encodeServerList(merged, TOP_GROUP_ID)
@@ -1204,6 +1311,9 @@ class AutoModeEngine(
                 context = context,
                 guids = guids,
                 onlyTcp = onlyTcp,
+                // The probe only moves for Iran mode, and only for this pipeline; the
+                // user's own tests keep asking the question they always asked.
+                delayTestUrl = if (AutoModeSourceManager.getStore().iranMode) IranMode.probeUrl() else null,
                 onEvent = { event ->
                     when (event) {
                         is RealPingEvent.Result -> {

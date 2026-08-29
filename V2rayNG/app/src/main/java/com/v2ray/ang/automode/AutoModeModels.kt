@@ -133,6 +133,14 @@ data class AutoModeStore(
     var acceptFraction: Double = 0.70,
 
     /** Servers kept ready so that every connection after the first is immediate. */
+    /**
+     * 🔴 Dead. Nothing writes this, and nothing should read it — [topCount] is the size of
+     * the reserve, it is what the keep-count slider writes and what `selectWinners` takes.
+     *
+     * Kept only so a stored JSON blob written before this note still parses into the same
+     * shape. Delete it once there is a migration worth writing.
+     */
+    @Deprecated("Use topCount; nothing has ever written this.", ReplaceWith("topCount"))
     var reserveCount: Int = 10,
 
     /**
@@ -162,6 +170,38 @@ data class AutoModeStore(
      * read off the provider's remark. Pruned with the reserve.
      */
     var countryByGuid: MutableMap<String, String> = mutableMapOf(),
+
+    /**
+     * When each kept server was last seen to answer, keyed by guid.
+     *
+     * 🔴 This is the signal the schedule never had, and its absence is the whole of the
+     * "it worked for the first few days" report.
+     *
+     * Nothing removes a server from the reserve when it dies. The entries are replaced
+     * wholesale by the next run and not before — so a reserve of ten dead servers counts as
+     * ten, the low-water test answers "still full", and every scheduled refresh from then
+     * on declines itself. The reserve was measured by counting rows, and rows do not stop
+     * existing when the server behind them does.
+     *
+     * The workaround was to refresh on age alone after a day. That is honest but blunt: it
+     * refreshes a healthy reserve it did not need to, and it leaves a reserve that died in
+     * the first hour broken for the remaining twenty-three.
+     *
+     * A pulse — one real ping per entry, kilobytes, safe to run with the tunnel up — fills
+     * this map, and the low-water test finally asks a question the data can answer.
+     * Pruned with the reserve, alongside [speedByGuid] and [countryByGuid], so it cannot
+     * outgrow it.
+     */
+    var aliveByGuid: MutableMap<String, Long> = mutableMapOf(),
+
+    /**
+     * When the reserve was last pulsed. Zero means never, which reads as "pulse now".
+     *
+     * Distinct from [reserveBuiltMillis], which says when the servers were *found*. A
+     * reserve can be hours old and entirely healthy, or twenty minutes old and already
+     * dead; only this one tracks when that was last checked.
+     */
+    var reserveCheckedMillis: Long = 0,
 
     /** Whether pressing power with nothing ready should run Auto Mode rather than refuse. */
     var autoRunOnConnect: Boolean = true,
@@ -283,4 +323,28 @@ data class AutoModeMeasurement(
     var delayMillis: Long = -1,
     /** Exit country measured through the tunnel, ISO code, or null. */
     var exitCountry: String? = null,
+    /**
+     * Whether this server carried a real request through its own tunnel, **in this run**.
+     *
+     * 🔴 Nonzero [speedMbps] used to be the only thing that proved a server was alive, and
+     * Iran mode had to stop requiring it — the throughput probe leaves Iran, so a server
+     * that works perfectly for Iranian destinations can legitimately measure zero. But
+     * dropping that test dropped the proof with it, and nothing replaced it:
+     *
+     *  - [delayMillis] is not evidence. A champion skips the real-ping stage entirely, so
+     *    its delay is whatever MMKV kept from a previous run — a server that died overnight
+     *    still carries yesterday's 1800 ms.
+     *  - [exitCountry] is not evidence either, and worse, it is only ever *looked up* when
+     *    throughput was nonzero. For exactly the servers this mode exists to accept it is
+     *    always null, so `isIranianExit` falls through to the address table — and the test
+     *    quietly becomes "is this IP in an Iranian block", which a dead server passes.
+     *
+     * So a dead Iranian server was publishable, and would be published: acceptance had
+     * stopped asking whether anything worked at all.
+     *
+     * This flag is the replacement. It is set when the throughput probe moved bytes, or —
+     * when it did not — when a plain request through the same proxy came back. One of the
+     * two must hold before a server is accepted in Iran mode.
+     */
+    var carriedRequest: Boolean = false,
 )

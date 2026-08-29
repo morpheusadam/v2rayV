@@ -42,12 +42,17 @@ class AutoModeEngineTest {
         delay: Long,
         country: String? = null,
         remarks: String = guid,
+        carried: Boolean = speed > 0,
     ) = AutoModeMeasurement(
         guid = guid,
         profile = ProfileItem(configType = EConfigType.VLESS, remarks = remarks, server = "1.2.3.4", serverPort = "443"),
         speedMbps = speed,
         delayMillis = delay,
         exitCountry = country,
+        // Mirrors AutoModeSpeedTester: throughput moving is itself proof the tunnel carried
+        // a request. A server that measured nothing has to say so separately, which is the
+        // whole point of the field.
+        carriedRequest = carried,
     )
 
     /**

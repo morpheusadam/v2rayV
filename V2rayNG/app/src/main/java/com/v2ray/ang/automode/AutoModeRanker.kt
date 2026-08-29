@@ -164,6 +164,25 @@ object AutoModeRanker {
             return protocolA - protocolB
         }
 
+        // 🔴 Latency is the last resort and must stay a tie-break between servers that
+        // are otherwise equal — never the key that actually orders them.
+        //
+        // 07-decisions.md records why, with numbers: taking the lowest-latency candidates
+        // gave a 2.1% pass rate against 7.5% for a random draw, because the hosts that
+        // answer fastest are CDN edges in front of dead proxies. Everything above sorts on
+        // something else for that reason.
+        //
+        // Iran mode walked straight into it by the back door. There every server can
+        // legitimately measure zero throughput, so every speed bucket is 0, every country
+        // is IR, and the only clause left with anything to say is this one — which turned
+        // the whole ranking into "fastest to answer first", the exact ordering the project
+        // measured as worse than chance. So when throughput told us nothing, this does not
+        // get to decide either; the shuffle AutoModeRanker.prioritise applied upstream is
+        // left to stand, which is a random draw, which is the better of the two.
+        if (a.speedMbps <= 0.0 && b.speedMbps <= 0.0) {
+            return 0
+        }
+
         return a.delayMillis.compareTo(b.delayMillis)
     }
 
