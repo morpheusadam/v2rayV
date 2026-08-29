@@ -35,6 +35,57 @@ Timing: line 8.1s · route 0.9s · fetch 7.6s · import 2.9s · probe 19.8s · t
 That line is the only real evidence about this pipeline's cost. Everything before it was
 argued from `estimateSeconds`, which exists to drive a countdown.
 
+## Iran mode measures against Iran
+
+The mode for reaching an Iranian bank from abroad had every gate pointing at a foreign
+host: liveness at `gstatic.com/generate_204`, throughput at `speed.cloudflare.com`, exit
+country at `api.ip.sb`. Through a server that comes out **inside** Iran, all three leave the
+country over the one link that is throttled and filtered by design — so a genuinely Iranian
+server answered slowly or not at all, `realPingStage` dropped it for exceeding 2500 ms
+before it was ever speed tested, and the run reported that nothing came out inside Iran.
+Nothing was wrong with the servers. The question was.
+
+It is also the wrong question on its own terms: nobody turns this mode on to reach Google.
+
+| | ordinary | Iran mode |
+|---|---|---|
+| liveness probe | `gstatic.com/generate_204` | `IranMode.probeUrl()` — an Iranian host, user-overridable |
+| delay ceiling | 2500 ms | 6000 ms |
+| throughput | a gate — zero is fatal | a **ranking signal only**, but see below |
+| exit country | not checked | must be Iran |
+| proof of life | throughput moved | `carriedRequest` — throughput moved, **or** a request came back through this proxy just now |
+
+🔴 **Dropping the throughput gate must not drop the proof.** The first attempt at this did,
+and the hole was wide: `delayMillis` is not evidence, because a champion skips the real-ping
+stage and carries whatever MMKV kept from a previous run; and `exitCountry` is not evidence
+either, because it is only *looked up* when throughput was nonzero — so for exactly the
+servers this mode exists to accept it is always null and `isIranianExit` falls through to
+the address table. Acceptance quietly became "is this IP in an Iranian block", which a
+server that died overnight passes. `AutoModeMeasurement.carriedRequest` is the replacement,
+and `AutoModeSpeedTester` sets it by asking the Iranian host directly when the download
+measured nothing.
+
+When there *is* a figure it still has to clear `IranMode.ACCEPT_FRACTION` (0.10). Otherwise
+that constant, and the baseline measured to feed it, would be dead code that two files
+described as live.
+
+Ranking has the mirror-image trap: with every server at zero throughput, `compareWinners`
+ran out of clauses and fell through to real-ping latency — the one ordering
+[07](07-decisions.md) records as measurably **worse than random** (2.1% against 7.5%). It
+now stops at zero and lets the ranker's shuffle stand.
+
+Throughput stops being a gate because the probe leaves Iran: a server working perfectly for
+what the user wants can legitimately measure zero, and requiring a figure let the state of
+Iran's international transit decide whether an Iranian server could carry Iranian traffic.
+
+**On the probe host.** It must be reachable from inside Iran, which rules out the foreign
+ones, and answered *in* Iran, which rules out most of the obvious Iranian names — Aparat,
+Snapp and Varzesh3 all sit behind ArvanCloud's anycast, whose network has 40+ points of
+presence outside the country. A request to them from a German server is answered in
+Bucharest, quickly, and would pass while proving the opposite of what it looks like. It is
+still one hardcoded name that will eventually rot, which is why the user's own delay-test
+URL wins over it.
+
 ## The acceptance rule
 
 A server is good enough when it delivers **70% of what the bare connection delivers**.
@@ -120,7 +171,7 @@ without ever starving a new one.
 | `MAX_REAL_PING` | 400 | Hard ceiling |
 | `MAX_SPEED_TEST` | 10 | New servers into the expensive stage |
 | `MAX_CHAMPIONS_RETESTED` | 8 | Existing keepers defending a slot |
-| `MAX_ACCEPTABLE_DELAY` | 2500 ms | Unusable beyond this however fast it downloads |
+| `MAX_ACCEPTABLE_DELAY` | 2500 ms | Unusable beyond this however fast it downloads. **6000 ms in Iran mode** — `maxDelay(iranMode)`, and `AutoModePulse` has to use the same one or it marks a healthy Iranian reserve dead every three hours |
 | `SPEED_TEST_SECONDS` | 8.0 | Only for the countdown |
 
 The real-ping stage stops the moment it has enough survivors, mid-batch — the worker emits a
@@ -147,6 +198,46 @@ squeezed out by the newcomer cap: a slot is lost by being beaten, not by arrivin
 
 A champion that wins again **keeps its existing guid**. Minting a fresh one would delete the
 entry the user has selected — and the one the tunnel is currently running on.
+
+## Keeping the reserve alive between runs
+
+Two jobs, and the difference between them is three orders of magnitude of cost:
+
+| | period | cost | tunnel up? | metered? |
+|---|---|---|---|---|
+| **pulse** (`AutoModePulse`) | 3 h, and on app open if 45 min stale | one real ping per kept server — kilobytes | **yes** | yes |
+| **refresh** (a full run) | 6 h, plus a catch-up 3 min after the tunnel stops | 150–350 MB | no | **no — unmetered only** |
+
+The pulse exists because `isRefreshDue` used to ask a question the data could not answer.
+Nothing removes a server from the reserve when it dies — entries are replaced wholesale by
+the next run and not before — so ten dead servers counted as ten, the low-water test
+answered "still full", and every scheduled refresh from then on declined itself. That is
+the whole of the "it worked for the first few days" report. The workaround was to refresh
+on **age** alone after 24 h, which is honest but blunt: it refreshes a healthy reserve it
+did not need to, and leaves a reserve that died in the first hour broken for the other 23.
+
+`aliveByGuid` is the missing signal, and `reserveCheckedMillis` says when it was last taken.
+A reserve is due for refresh when fewer than **0.6** of it is known to have answered within
+`ALIVE_TTL` (12 h). The age backstop stays for a reserve that has never been pulsed, because
+"unknown" is not "healthy" — reading it as healthy is the original bug.
+
+**The pulse runs with the tunnel up, and that is most of its value.** The app excludes
+itself from its own VPN, so a ping's throwaway core goes over the real network. Before this,
+a user on always-on VPN got no background maintenance at all, ever: the refresh declines
+while the tunnel is running and relies on the catch-up armed when it stops, which that user
+never reaches.
+
+### Why the pulse is a `RemoteCoroutineWorker`
+
+The scheduler's workers run in `:bg`. Anything needing libv2ray has to happen in
+`:RunSoLibV2RayDaemon`, and the only route there was to start `AutoModeRunService`. But a
+job is not a foreground state: on Android 8 a background `startService` throws, and since
+Android 12 `startForegroundService` throws `ForegroundServiceStartNotAllowedException`
+unless the app holds an exemption — and "a WorkManager job is running" is not one of the
+fourteen. `MessageHelper` caught and logged it, so the failure was **silent**.
+
+`AutoModeRemoteWorkerService` is declared in the daemon process, so WorkManager binds to it
+and runs the worker there under its own job. Nothing is started, so nothing can be refused.
 
 ## The reserve, and Smart Switch
 

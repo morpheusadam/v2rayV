@@ -55,8 +55,14 @@ android {
         // address — which is a feature rather than a fix, so the minor number moves.
         // 2.4.1 is fixes only: the app's own name in the F-Droid build, and a power button
         // that stops a scan instead of ignoring the press.
-        versionCode = 747
-        versionName = "2.4.1"
+        // 2.5.0 makes Iran mode actually connect — it was measuring every candidate against
+        // Google and Cloudflare, which a server inside Iran reaches slowly or not at all,
+        // so the servers the mode existed to find were the ones it threw away. It also adds
+        // the reserve pulse, which is why the minor number moves: the app now checks
+        // between runs whether the servers it kept still work, instead of counting rows and
+        // assuming they do.
+        versionCode = 748
+        versionName = "2.5.0"
 
         val abiFilterList = (properties["ABI_FILTERS"] as? String)?.split(';')
         splits {

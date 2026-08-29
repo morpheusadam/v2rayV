@@ -13,6 +13,43 @@ looks the same whatever theme the rest of the app is in.
 **segmented rather than smooth on purpose** — it reads as an instrument, and quantising a
 jittering measurement is honest about the precision it does not have.
 
+### The power button has three states
+
+`PowerRing` used to take a single `connected` boolean and its own docstring said "colour
+alone separates the states". There were two: red, and green once the tunnel was up. Pressing
+it started a run that takes minutes, and for those minutes the button was **pixel-identical
+to the idle button** — same red, same power glyph, an unfilled ring. The ring's fill came
+from `DashboardState.connecting`, which nothing in the app ever set to true, so the one
+mechanism the design had for showing "working" was wired to a constant.
+
+| connected | working | a press means | glyph | accent | ring | label |
+|---|---|---|---|---|---|---|
+| no | no | connect | power | red | empty | NOT CONNECTED |
+| no | yes | stop the run | **stop** | violet | sweeping | CONNECTING *or* SCANNING |
+| yes | no | disconnect | **stop** | green | full | CONNECTED |
+| yes | yes | **stop the run**, not the tunnel | **stop** | green | full | CONNECTED |
+
+The fourth row is not a corner case — a run carries on filling the reserve after it
+connects, so it is the ordinary state for a couple of minutes after every first connection.
+`MainActivity.handleFabAction` tests the run **first**, so a press there stops the scan and
+leaves the tunnel up. The spoken label follows that (`acc_stop_scan`), because a screen
+reader saying "stop service" over a press that does not stop the service is worse than
+saying nothing.
+
+CONNECTING and SCANNING are different claims and only one of them is ever true. A run
+started by the power button ends in a connection; one started from the Auto Mode card, or
+by the background schedule, does not. `DashboardState.connecting` finally carries that
+distinction — it was dead state, never set true by anything, which is what made the ring's
+fill inert in the first place.
+
+The glyph carries the change as well as the colour, deliberately — colour alone excludes
+anyone who cannot separate red from green, and this is the only control on the screen. The
+ring **sweeps** rather than sitting full while working: a static full ring is
+indistinguishable from a finished one, and a run has no honest completion fraction to show.
+
+Note that commit `ec27a999` fixed the stop behaviour on `MainBottomBar`'s FAB — which
+belongs to the server list, a screen the user is not on when they press start.
+
 ### While a run is happening
 
 `ConnectingCard.kt` shows a countdown and a seven-step timeline rather than a spinner, so a
