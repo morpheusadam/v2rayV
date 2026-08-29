@@ -77,19 +77,55 @@ Without it the release comes out **unsigned rather than debug-signed**, on purpo
    check compares the tag against `BuildConfig.VERSION_NAME`; leave the name alone and no
    installed app will ever see the release.
 3. Run the tests.
-4. `assemblePlaystoreRelease`, then verify the signing certificate.
-5. Push, then:
+4. Commit, then tag **annotated** and push both:
 
 ```bash
-gh release create v<version> <apk> --repo morpheusadam/v2rayV \
-  --target automode --title "…" --notes-file <notes.md> --latest
+git tag -a v<version> -m "v2rayV <version>"
+git push origin automode --follow-tags
 ```
+
+5. Dispatch the build. **This is what produces the release** — CI builds every ABI, signs
+   with the real keystore from `APP_KEYSTORE_BASE64`, drops the F-Droid flavour, and
+   creates the release for the tag:
+
+```bash
+gh workflow run "Build APK" --repo morpheusadam/v2rayV --ref automode \
+  -f release_tag=v<version> -f prerelease=false
+```
+
+6. Write the notes onto the release once CI has created it:
+
+```bash
+gh release edit v<version> --repo morpheusadam/v2rayV \
+  --notes-file <notes.md> --latest --prerelease=false
+```
+
+> **Pushing a tag does not build anything.** No workflow in this repo has a `tags:` trigger.
+> A push to `automode` builds APKs as workflow artifacts and stops there; only a manual
+> dispatch with a non-empty `release_tag` publishes. This is the step that is easy to skip
+> and leaves a tag with no release behind it.
+
+> **A local `assemblePlaystoreRelease` is for checking the build, not for shipping.** It is
+> still worth running — and verifying the certificate — but CI is what signs the artifacts
+> that go out, from the same key by a different route. Uploading a locally built APK by
+> hand is how the F-Droid flavour reached a release page in 2.4.0: `assembleRelease`
+> produces both flavours, and globbing the output directory catches both.
 
 > **Do not mark it pre-release.** `GITHUB_DOWNLOAD_URL` in the app is
 > `releases/latest/download`, and `latest` skips pre-releases — the flag both hides the
 > release from the repo's front page and breaks in-app updating.
 
 The updater matches assets by **ABI substring**, so the filename must contain `arm64-v8a`.
+Keep gradle's split names; a tidier `v2rayV-<version>.apk` breaks in-app updating outright.
+
+> The release notes are read twice by machines. `announce.yml` sends the **first 600
+> characters** to the Telegram channel, and `UpdateCheckerManager` shows the whole body in
+> the in-app update dialog. Put the sentence that matters first, and write it to be read on
+> a phone.
+
+> `announce.yml` fires on `released`, not `published`. A pre-release or a draft never
+> notifies the channel, and the APK it forwards must be under 50 MB — which is why only
+> `arm64-v8a` goes, and the universal build stays on the release page.
 
 ## Play Protect
 
