@@ -55,7 +55,16 @@ fun DashboardScreen(
     onNoticeAction: () -> Unit = {},
     onNoticeDismiss: () -> Unit = {},
 ) {
-    val accent = if (state.connected) Securo.Green else Securo.Red
+    // The bloom behind the whole top of the screen. It has to follow the same three states
+    // as the button, and for a blunt reason: it is 340dp tall and the button is 128dp, so
+    // leaving it two-state meant a run repainted two small elements violet inside a page
+    // that was still entirely red. By pixel area the state barely changed, and the screen
+    // went on reading as "disconnected, something is wrong".
+    val accent = when {
+        state.connected -> Securo.Green
+        autoModeRunning -> Securo.Violet
+        else -> Securo.Red
+    }
 
     Box(
         modifier = Modifier
@@ -107,7 +116,14 @@ fun DashboardScreen(
                 // leaves, and the reserve position is on the Auto Mode card.
             }
 
-            StatusCard(state = state, onTogglePower = onTogglePower)
+            StatusCard(
+                state = state,
+                // The run is the long wait, so it is the one the button has to show. The
+                // screen already had this flag and spent it on the cards below while the
+                // one control the user actually pressed ignored it.
+                working = autoModeRunning,
+                onTogglePower = onTogglePower,
+            )
 
             // Live rates. While a test is running the tunnel's own counters read zero —
             // the traffic belongs to throwaway cores, not the tunnel — so the download
@@ -221,7 +237,10 @@ private fun ratioOf(value: Double, max: Double): Float =
     if (max <= 0.0) 0f else (value / max).toFloat().coerceIn(0f, 1f)
 
 @Composable
-private fun StatusCard(state: DashboardState, onTogglePower: () -> Unit) {
+private fun StatusCard(state: DashboardState, working: Boolean, onTogglePower: () -> Unit) {
+    // Connected wins: a run still filling the reserve behind a live tunnel is not a
+    // connection in progress, and must not be drawn as one.
+    val busy = working && !state.connected
     SecuroCard(modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
@@ -234,12 +253,21 @@ private fun StatusCard(state: DashboardState, onTogglePower: () -> Unit) {
                 SecuroLabel(
                     text = stringResource(
                         when {
-                            state.connecting -> R.string.dashboard_connecting
                             state.connected -> R.string.dashboard_connected
+                            // Only a run that will end in a connection may say so. One
+                            // started from the Auto Mode card, or by the background
+                            // schedule, refills the reserve and stops — telling that user
+                            // "Connecting" is not vague, it is untrue.
+                            state.connecting -> R.string.dashboard_connecting
+                            busy -> R.string.dashboard_scanning
                             else -> R.string.dashboard_not_connected
                         }
                     ),
-                    color = if (state.connected) Securo.Green else Securo.Red,
+                    color = when {
+                        state.connected -> Securo.Green
+                        busy || state.connecting -> Securo.Violet
+                        else -> Securo.Red
+                    },
                 )
 
                 Spacer(Modifier.height(6.dp))
@@ -264,8 +292,10 @@ private fun StatusCard(state: DashboardState, onTogglePower: () -> Unit) {
 
             PowerRing(
                 connected = state.connected,
+                working = busy || state.connecting,
                 // A connecting tunnel has no measurement to show yet, so the ring runs
-                // full as a state indicator rather than pretending to a reading.
+                // full as a state indicator rather than pretending to a reading. While a
+                // run is in flight the ring sweeps instead, and this value is unused.
                 progress = if (state.connected || state.connecting) 1f else 0f,
                 onClick = onTogglePower,
                 modifier = Modifier.size(128.dp),

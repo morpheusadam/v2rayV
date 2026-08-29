@@ -195,7 +195,19 @@ class MainViewModel(
                         ),
                         // The live meter belongs to a run; when the run ends it has nothing
                         // to show and must not be left holding the last sample.
-                        dashboard = it.dashboard.copy(testing = event.running),
+                        //
+                        // `connecting` finally means something. It was dead state — nothing
+                        // in the app ever set it true — and the dashboard had three
+                        // expressions reading it. It now carries the one distinction the
+                        // screen could not otherwise make: a run started by the power
+                        // button ends in a connection, and a run started from the Auto Mode
+                        // card or by the background schedule does not. Both look identical
+                        // from `running` alone, and saying "Connecting" for the second is a
+                        // plain false statement to someone who only wanted a refresh.
+                        dashboard = it.dashboard.copy(
+                            testing = event.running,
+                            connecting = event.running && pendingAutoConnect,
+                        ),
                     )
                 }
             }

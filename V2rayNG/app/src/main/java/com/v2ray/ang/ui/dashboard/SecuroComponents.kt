@@ -1,6 +1,11 @@
 package com.v2ray.ang.ui.dashboard
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -30,6 +35,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.v2ray.ang.R
@@ -100,25 +106,92 @@ fun SecuroLabel(text: String, color: Color = Securo.TextSecondary, modifier: Mod
  * The power control: a ring of radial ticks around a round button.
  *
  * The ring is a gauge as well as decoration — [progress] fills it clockwise, which is what
- * carries "connecting" as motion rather than as a word. Colour alone separates the states,
- * so the fill is always drawn from the same geometry.
+ * carries "connecting" as motion rather than as a word.
+ *
+ * 🔴 It used to say "colour alone separates the states", and it had two: red, and green
+ * once the tunnel was up. Pressing it started a run that takes minutes, and for those
+ * minutes the button was **pixel-identical to the idle button** — same red, same power
+ * glyph, and an unfilled ring, because the fraction it was given came from a `connecting`
+ * flag that nothing in the app ever set to true. So the one control on the screen gave no
+ * sign it had been pressed, on the one path where the wait is long enough to need it.
+ *
+ * There are three states, not two, and each one answers a different question:
+ *
+ * | state | what a press means | glyph | accent |
+ * |---|---|---|---|
+ * | idle | connect | power | red |
+ * | [working] | stop what is running | stop | violet |
+ * | [connected] | disconnect | stop | green |
+ *
+ * The glyph carries it as well as the colour, deliberately: colour alone excludes anyone
+ * who cannot separate red from green, and this is the only control on the screen.
+ *
+ * While [working] the ring sweeps rather than sitting full. A static full ring is
+ * indistinguishable from a finished one, and the point of the motion is to say the app is
+ * still doing something — the run has no completion fraction to show honestly, so the ring
+ * must not imply one.
  */
 @Composable
 fun PowerRing(
     connected: Boolean,
+    working: Boolean,
     progress: Float,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val accent = if (connected) Securo.Green else Securo.Red
-    val dim = if (connected) Securo.GreenDim else Securo.RedDim
-    val glow = if (connected) Securo.GreenGlow else Securo.RedGlow
+    val accent = when {
+        connected -> Securo.Green
+        working -> Securo.Violet
+        else -> Securo.Red
+    }
+    val dim = when {
+        connected -> Securo.GreenDim
+        working -> Securo.VioletDim
+        else -> Securo.RedDim
+    }
+    val glow = when {
+        connected -> Securo.GreenGlow
+        working -> Securo.VioletGlow
+        else -> Securo.RedGlow
+    }
 
-    val animatedProgress by animateFloatAsState(
-        targetValue = progress.coerceIn(0f, 1f),
-        animationSpec = tween(durationMillis = 600),
-        label = "power-ring",
-    )
+    // Connected wins over working: a run that carries on filling the reserve behind a live
+    // tunnel must not repaint the button as though the connection were still being looked
+    // for. Once the user is through, the button's job is to say so.
+    val sweeping = working && !connected
+
+    // 🔴 The transition is created inside the branch, not above it.
+    //
+    // rememberInfiniteTransition starts an animation the moment it is composed and runs a
+    // frame loop for as long as it exists, whether or not anybody reads the value. Built
+    // unconditionally it did two things wrong: it woke the main thread every frame for the
+    // whole time the dashboard was open in *any* state, and — the visible one — it had
+    // already been running for however long the user had been looking at the screen, so
+    // the first frame of a press jumped to whatever phase it happened to be at and then
+    // snapped back. On the one interaction this button exists to make legible.
+    //
+    // Conditional composition is fine here: each branch is its own group, and leaving one
+    // disposes what it remembered, which is exactly the wanted lifetime.
+    val animatedProgress = if (sweeping) {
+        val sweep = rememberInfiniteTransition(label = "power-ring-sweep")
+        val swept by sweep.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1400, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "power-ring-sweep-fraction",
+        )
+        swept
+    } else {
+        val settled by animateFloatAsState(
+            targetValue = progress.coerceIn(0f, 1f),
+            animationSpec = tween(durationMillis = 600),
+            label = "power-ring",
+        )
+        settled
+    }
 
     Box(modifier = modifier.clickable(onClick = onClick), contentAlignment = Alignment.Center) {
         Canvas(modifier = Modifier.fillMaxSize()) {
@@ -149,9 +222,26 @@ fun PowerRing(
                 style = Stroke(width = 2.dp.toPx()),
             )
         }
+        // Stop, not power, whenever a press would stop something — a run in flight or a
+        // live tunnel. The glyph is the part of the change that survives a colourblind
+        // user and a glance too short to register a hue.
+        val stops = connected || working
         Icon(
-            painter = painterResource(R.drawable.ic_power_settings_24dp),
-            contentDescription = null,
+            painter = painterResource(
+                if (stops) R.drawable.ic_stop_24dp else R.drawable.ic_power_settings_24dp
+            ),
+            // Spoken, so it has to name what the press actually does rather than what the
+            // button generally is. MainActivity.handleFabAction tests the run FIRST, so
+            // while one is in flight a press stops the scan and leaves the tunnel alone —
+            // even when the tunnel is up. Announcing "stop service" there is not vague, it
+            // is wrong, and a screen-reader user has nothing else to go on.
+            contentDescription = stringResource(
+                when {
+                    working -> R.string.acc_stop_scan
+                    connected -> R.string.acc_stop
+                    else -> R.string.acc_start
+                }
+            ),
             tint = accent,
             modifier = Modifier.size(34.dp),
         )

@@ -30,6 +30,13 @@ object Securo {
     val Violet = Color(0xFF7C5CFF)
     val VioletDim = Color(0xFF3D2E7A)
 
+    /**
+     * The bloom under a working power button. Without it that button drew a violet ring and
+     * a violet glyph over a *red* glow, because red was the else-branch of a two-state
+     * expression — and red under violet reads as an error rather than as work in progress.
+     */
+    val VioletGlow = Color(0x667C5CFF)
+
     /** Disconnected. */
     val Red = Color(0xFFFF3B5C)
     val RedDim = Color(0xFF7A1C2C)

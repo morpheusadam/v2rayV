@@ -586,6 +586,14 @@ IR is the exception, and it is the switch at the top of this screen: picking it 
     <string name="dashboard_connected">Connected</string>
     <string name="dashboard_connecting">Connecting</string>
     <string name="dashboard_not_connected">Not connected</string>
+    <!-- Status while Auto Mode is running but will not connect at the end of it: a refresh
+         started from the Auto Mode card, or by the background schedule. Distinct from
+         dashboard_connecting, which promises a connection. -->
+    <string name="dashboard_scanning">Scanning</string>
+    <!-- Spoken by a screen reader for the power button while a scan is in flight. Not
+         "Stop service": pressing it there stops the scan, and the service may not even be
+         running. -->
+    <string name="acc_stop_scan">Stop scan</string>
     <string name="dashboard_no_server">No server selected</string>
     <string name="dashboard_no_address">— · — · — · —</string>
     <string name="dashboard_download">Download</string>
